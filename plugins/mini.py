@@ -1,12 +1,80 @@
 
+from dataclasses import dataclass
 import aiohttp
 from mirai.asgi import ASGI
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from plugin import Plugin, autorun, route
+from nap_cat_types import GetGroupMemberInfoResp
+from plugin import Inject, InstrAttr, Plugin, autorun, delegate, route
+from utilities import UserSpec
+
+from typing import TYPE_CHECKING, Optional
+if TYPE_CHECKING:
+    from plugins.known_groups import KnownGroups
+    from plugins.nap_cat import NapCat
+
+class UserMan():
+    openid: Optional[str] = None
+    ...
 
 @route('mini')
 class Mini(Plugin):
+    users: UserSpec[UserMan] = UserSpec[UserMan]()
+
+    known_groups: Inject['KnownGroups']
+    nap_cat: Inject['NapCat']
+
+    @delegate()
+    async def get_matched_qqids(self, *, nickname: str):
+        matched_qqids = []
+
+        for group_id in self.known_groups:
+            members = await self.bot.member_list(group_id)
+            for member in members.data:
+                async with self.override(member):
+                    info: GetGroupMemberInfoResp = await self.nap_cat.get_group_member_info()
+                    if info.nickname == nickname:
+                        matched_qqids.append(member.id)
+
+        return matched_qqids
+    
+    @delegate(InstrAttr.FORCE_BACKUP)
+    async def update_user_record(self, *, qqid: int, openid: str):
+        man = self.users.get_or_create_data(qqid)
+        man.openid = openid
+
+    async def bind_endpoint(self, request: Request):
+        with self.engine.of() as c, c:
+            data: dict[str, str] = await request.json()
+
+            nickname = data.get("nickname")
+            openid = data.get("openid")
+
+            matched_qqids: list[int] = await self.get_matched_qqids(nickname=nickname)
+
+            print(f'{matched_qqids=}')
+
+
+            if len(matched_qqids) == 0:
+                return JSONResponse({
+                    "code": 1,
+                    "errMsg": '未找到匹配的用户'
+                })
+        
+            if len(matched_qqids) > 1:
+                return JSONResponse({
+                    "code": 1,
+                    "errMsg": '用户冲突, 请联系管理员'
+                })
+            
+            qqid = matched_qqids[0]
+            
+            await self.update_user_record(qqid=qqid, openid=openid)
+
+            return JSONResponse({
+                "code": 0
+            })
+    
 
     async def login_endpoint(self, request: Request):
         data: dict[str, str] = await request.json()
@@ -49,3 +117,5 @@ class Mini(Plugin):
         asgi.add_route('/mini-test', self.test_endpoint, ['POST'])
 
         asgi.add_route('/login', self.login_endpoint, ['POST'])
+
+        asgi.add_route('/bind', self.login_endpoint, ['POST'])
