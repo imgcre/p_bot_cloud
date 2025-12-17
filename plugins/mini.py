@@ -32,12 +32,10 @@ class Mini(Plugin):
         matched_qqids = []
 
         for group_id in self.known_groups:
-            members = await self.bot.member_list(group_id)
-            for member in members.data:
-                async with self.override(member):
-                    info: GetGroupMemberInfoResp = await self.nap_cat.get_group_member_info()
-                    if info.nickname == nickname:
-                        matched_qqids.append(member.id)
+            member_infos = await self.nap_cat.get_group_member_list(group_id)
+            for info in member_infos:
+                if info.nickname == nickname:
+                    matched_qqids.append(info.user_id)
 
         return matched_qqids
     
@@ -45,6 +43,7 @@ class Mini(Plugin):
     async def update_user_record(self, *, qqid: int, openid: str):
         man = self.users.get_or_create_data(qqid)
         man.openid = openid
+
 
     async def bind_endpoint(self, request: Request):
         with self.engine.of() as c, c:
@@ -57,7 +56,7 @@ class Mini(Plugin):
 
             matched_qqids: list[int] = await self.get_matched_qqids(nickname=nickname)
 
-            print(f'{matched_qqids=}')
+            logger.info(f'{matched_qqids=}')
 
             if len(matched_qqids) == 0:
                 return JSONResponse({

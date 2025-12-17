@@ -1,3 +1,4 @@
+from email.headerregistry import Group
 from typing import Optional, Type, TypeVar, Union, overload
 import config
 from mirai import GroupMessage, MessageChain, At
@@ -5,6 +6,7 @@ from plugin import Plugin, delegate, top_instr, route, enable_backup, Inject
 from mirai.models.message import Forward, ForwardMessageNode, MessageComponent
 from mirai.models.entities import Friend, GroupMember
 from dacite import from_dict
+from dacite.core import _build_value
 import aiohttp
 from dataclasses import dataclass
 
@@ -26,13 +28,19 @@ class NapCat(Plugin):
             }
             async with session.post(f'http://127.0.0.1:3000{endpoint}', json=data, headers=headers) as resp:
                 if ret_type is not None:
-                    return from_dict(data_class=ret_type, data=(await resp.json())['data'])
+                    return _build_value(data_class=ret_type, data=(await resp.json())['data'])
 
     @delegate()
     async def get_stranger_info(self, user: User) -> GetStrangerInfoResp:
         return await self.call('/get_stranger_info', {
             "user_id": user.id
         }, GetStrangerInfoResp)
+    
+    async def get_group_member_list(self, group_id: int) -> list[GetGroupMemberListRespItem]:
+        return await self.call('/get_group_member_list', {
+            "group_id": group_id
+        }, list[GetGroupMemberListRespItem])
+
     
     @overload
     async def get_group_member_info(self) -> GetGroupMemberInfoResp: ...
