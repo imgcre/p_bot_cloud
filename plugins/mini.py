@@ -1,6 +1,7 @@
 
 from dataclasses import dataclass
 import aiohttp
+from mirai import get_logger
 from mirai.asgi import ASGI
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
 class UserMan():
     openid: Optional[str] = None
     ...
+
+logger = get_logger()
 
 @route('mini')
 class Mini(Plugin):
@@ -50,10 +53,11 @@ class Mini(Plugin):
             nickname = data.get("nickname")
             openid = data.get("openid")
 
+            logger.info(f'{nickname=}, {openid=}')
+
             matched_qqids: list[int] = await self.get_matched_qqids(nickname=nickname)
 
             print(f'{matched_qqids=}')
-
 
             if len(matched_qqids) == 0:
                 return JSONResponse({
