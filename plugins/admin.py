@@ -208,6 +208,7 @@ class ReslovedCensorSpeechQual(Enum):
     ALL = auto()
     AT = auto()
     CURIOUS = auto()
+    PINYIN = auto()
 
 @dataclass
 class ReslovedCensorSpeechKey():
