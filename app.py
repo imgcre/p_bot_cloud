@@ -1,3 +1,4 @@
+import json
 import nest_asyncio
 
 nest_asyncio.apply()
@@ -11,6 +12,10 @@ from mirai.models.events import MemberCardChangeEvent, GroupRecallEvent, NudgeEv
 from mirai.models.api import RespOperate
 import zhconv
 import config
+
+from mirai.asgi import ASGI
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 bot = Mirai(config.BOT_QQ_ID, adapter=WebSocketAdapter(
     verify_key=config.MIRAI_VERIFY_KEY, 
@@ -97,10 +102,30 @@ async def on_message(event: MessageEvent):
             traceback.print_exc()
             await ctx.send()
 
+async def test_endpoint(request: Request):
+    # 获取 JSON 数据
+    data: dict[str, str] = await request.json()
+    
+    # 或者手动解析
+    # body = await request.body()
+    # if body:
+    #     data = json.loads(body)
+    
+    # 获取特定字段
+    name = data.get("name", "未知")
+    
+    return JSONResponse({
+        "status": "success",
+        "name": name
+    })
+
 def main():
     engine.load()
-    bot.run()
 
+    asgi = ASGI()
+    asgi.add_route('/test', test_endpoint, ['POST'])
+
+    bot.run(host='0.0.0.0')
     
 
 if __name__ == '__main__':

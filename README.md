@@ -13,3 +13,6 @@
 628 修改了 Recall
 
 pyppeteer的版本有冲突，得单独用pip来安装
+
+pip install httpx[socks]
+
