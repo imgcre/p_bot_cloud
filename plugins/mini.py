@@ -1,4 +1,5 @@
 
+import aiohttp
 from mirai.asgi import ASGI
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -6,6 +7,24 @@ from plugin import Plugin, autorun, route
 
 @route('mini')
 class Mini(Plugin):
+
+    async def login_endpoint(self, request: Request):
+        data: dict[str, str] = await request.json()
+
+        code = data.get("code")
+        # 866UZjMprcGQYAHy
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://api.q.qq.com/sns/jscode2session', params={
+                'appid': '1112171843',
+                'secret': '866UZjMprcGQYAHy',
+                'js_code': code,
+                'grant_type': 'authorization_code'
+            }) as response:
+                j = await response.json()
+                return JSONResponse({
+                    "openid": j["openid"],
+                })
+        ...
 
     async def test_endpoint(self, request: Request):
         # 获取 JSON 数据
@@ -28,3 +47,5 @@ class Mini(Plugin):
     async def startup(self):
         asgi = ASGI()
         asgi.add_route('/mini-test', self.test_endpoint, ['POST'])
+
+        asgi.add_route('/login', self.login_endpoint, ['POST'])
