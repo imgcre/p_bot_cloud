@@ -7,7 +7,7 @@ import json
 import random
 import re
 import time
-from typing import Final, Optional, Union
+from typing import Dict, Final, Optional, Union
 from collections import Iterable
 from itertools import groupby
 
@@ -211,17 +211,16 @@ class ReslovedCensorSpeechQual(Enum):
 
 @dataclass
 class ReslovedCensorSpeechKey():
-    qual: ReslovedCensorSpeechQual
+    quals: Dict[ReslovedCensorSpeechQual, list[str]]
     reason: str
-    args: list[str]
     
     @classmethod
     def from_expr(cls, expr: str):
         reason, *remains = expr.split(':')
+
         return cls(
             reason=reason,
-            qual=ReslovedCensorSpeechQual[remains[0].upper()] if len(remains) > 0 else ReslovedCensorSpeechQual.BASE,
-            args=remains[1:]
+            quals={ReslovedCensorSpeechQual[(its := r.split('.'))[0].upper()]: its[1:] for r in remains},
         )
 
 @route('管理')
@@ -1018,13 +1017,13 @@ class Admin(Plugin, AchvCustomizer):
 
             for expr, words in censor_speech_o.items():
                 key = ReslovedCensorSpeechKey.from_expr(expr)
-                if key.qual == ReslovedCensorSpeechQual.BASE and is_in_white_list:
+                if ReslovedCensorSpeechQual.ALL not in key.quals and is_in_white_list:
                     continue
 
-                if key.qual == ReslovedCensorSpeechQual.AT and member.id not in (int(a) for a in key.args if a.isdecimal()):
+                if ReslovedCensorSpeechQual.AT in key.quals and member.id not in (int(a) for a in key.quals[ReslovedCensorSpeechQual.AT] if a.isdecimal()):
                     continue
 
-                if key.qual == ReslovedCensorSpeechQual.CURIOUS and not await self.achv.has(AdminAchv.CURIOUS):
+                if ReslovedCensorSpeechQual.CURIOUS in key.quals and not await self.achv.has(AdminAchv.CURIOUS):
                     continue
 
                 for w_item in words:
