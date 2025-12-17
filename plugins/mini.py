@@ -118,4 +118,4 @@ class Mini(Plugin):
 
         asgi.add_route('/login', self.login_endpoint, ['POST'])
 
-        asgi.add_route('/bind', self.login_endpoint, ['POST'])
+        asgi.add_route('/bind', self.bind_endpoint, ['POST'])
