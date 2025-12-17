@@ -7,7 +7,7 @@ from plugin import Plugin, autorun, route
 @route('mini')
 class Mini(Plugin):
 
-    async def test_endpoint(request: Request):
+    async def test_endpoint(self, request: Request):
         # 获取 JSON 数据
         data: dict[str, str] = await request.json()
         
