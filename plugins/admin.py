@@ -31,6 +31,8 @@ import pyzbar.pyzbar
 from pyzbar.pyzbar import ZBarSymbol
 from PIL import Image as PImage
 
+from pypinyin import lazy_pinyin
+
 from nap_cat_types import GetGroupMemberInfoResp, GetStrangerInfoResp
 
 from typing import TYPE_CHECKING
@@ -1027,21 +1029,36 @@ class Admin(Plugin, AchvCustomizer):
                 if ReslovedCensorSpeechQual.CURIOUS in key.quals and not await self.achv.has(AdminAchv.CURIOUS):
                     continue
 
+                if ReslovedCensorSpeechQual.PINYIN in key.quals:
+                    txt_pinyin = lazy_pinyin(txt)
+
                 for w_item in words:
                     replacer = None
                     if isinstance(w_item, str):
                         kw = w_item
                     elif isinstance(w_item, dict):
                         kw, replacer = next(iter(w_item.items()))
-                    m = re.search(kw, txt)
-                    if m is not None:
+
+                    forb_word = None
+
+                    if ReslovedCensorSpeechQual.PINYIN in key.quals:
+                        kw_pinyin = lazy_pinyin(kw)
+                        found_idx = find_subsequence_start(kw_pinyin, txt_pinyin)
+                        if found_idx != -1:
+                            forb_word = txt[found_idx:found_idx+len(kw_pinyin)]
+                    else:
+                        m = re.search(kw, txt)
+                        if m is not None:
+                            forb_word = m.group(0)
+
+                    if forb_word is not None:
                         try:
                             async def img_op(s, ctx):
                                 img_path = self.path.data.of_file(s)
                                 return Image(path=img_path)
                             suffix = f'(推荐使用"{replacer}")' if replacer is not None else ''
                             chain = await self.breakdown_chain(suffix, r'\[img:(.*?)\]', img_op)
-                            await try_recall([key.reason, *chain], f'消息中包含违禁词"{m.group(0)}", 补充理由: {key.reason}')
+                            await try_recall([key.reason, *chain], f'消息中包含违禁词"{forb_word}", 补充理由: {key.reason}')
                         except:
                             traceback.print_exc()
                         return True
@@ -1139,3 +1156,33 @@ class Admin(Plugin, AchvCustomizer):
             if not passed: return
 
         return '作业写完了没'
+
+def find_subsequence_start(sub, lst):
+    """
+    查找sub是否是lst的连续子序列，如果是则返回起始下标
+    
+    Args:
+        sub: 子序列列表
+        lst: 主列表
+        
+    Returns:
+        int: 如果是连续子序列返回起始下标，否则返回-1
+    """
+    if not sub:  # 空列表是任何列表的子序列，返回第一个位置
+        return 0
+    if len(sub) > len(lst):
+        return -1
+    
+    n, m = len(lst), len(sub)
+    
+    # 遍历主列表
+    for i in range(n - m + 1):
+        found = True
+        # 检查连续m个元素是否匹配
+        for j in range(m):
+            if lst[i + j] != sub[j]:
+                found = False
+                break
+        if found:
+            return i
+    return -1

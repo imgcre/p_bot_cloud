@@ -28,6 +28,7 @@ dependencies = [
     "pychorus==0.1",
     "pydub==0.25.1",
     "pyncm-async==0.1.2",
+    "pypinyin[phrase]>=0.55.0",
     "pyzbar==0.1.8",
     "uvicorn>=0.35.0",
     "yiri-mirai==0.2.6.2",
