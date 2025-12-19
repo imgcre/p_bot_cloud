@@ -54,14 +54,13 @@ class Mini(Plugin):
             if man.openid == openid:
                 return qqid, man
 
-
+    @delegate()
     async def user_info_endpoint(self, request: Request):
+        # with self.engine.of() as c, c:
         data: dict[str, str] = await request.json()
-
         openid = data.get("openid")
 
         res = self.get_user_man_by_openid(openid)
-
         if res is None:
             return JSONResponse({
                 "code": 1,
@@ -69,21 +68,17 @@ class Mini(Plugin):
             })
         
         qqid, man = res
-
         for group_id in self.known_groups:
             member = await self.bot.get_group_member(group_id, qqid)
-
             if member is None:
                 return JSONResponse({
                     "code": 1,
                     "errMsg": '群员不存在'
                 })
-
             async with self.override(member):
                 is_checked_in: bool = await self.check_in.is_checked_in_today()
                 voucher_cnt: Decimal = await self.voucher.get_count()
-        
-        
+
         return JSONResponse({
             "code": 0,
             "is_checked_in": is_checked_in,
@@ -170,10 +165,8 @@ class Mini(Plugin):
     @autorun
     async def startup(self):
         asgi = ASGI()
+
         asgi.add_route('/mini-test', self.test_endpoint, ['POST'])
-
         asgi.add_route('/login', self.login_endpoint, ['POST'])
-
         asgi.add_route('/bind', self.bind_endpoint, ['POST'])
-
         asgi.add_route('/user_info', self.user_info_endpoint, ['POST'])
