@@ -1,6 +1,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
+import inspect
 import aiohttp
 from mirai import get_logger
 from mirai.asgi import ASGI
@@ -10,7 +11,7 @@ from nap_cat_types import GetGroupMemberInfoResp
 from plugin import Inject, InstrAttr, Plugin, autorun, delegate, route
 from utilities import UserSpec
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 if TYPE_CHECKING:
     from plugins.known_groups import KnownGroups
     from plugins.nap_cat import NapCat
@@ -22,6 +23,11 @@ class UserMan():
     ...
 
 logger = get_logger()
+
+def endpoint(func: Callable):
+    wrapper = delegate()(func)
+    wrapper._endpoint_ = True
+    return wrapper
 
 @route('mini')
 class Mini(Plugin):
@@ -145,7 +151,9 @@ class Mini(Plugin):
                 })
         ...
 
-    async def test_endpoint(self, request: Request):
+
+    @endpoint
+    async def test(self, request: Request):
         # 获取 JSON 数据
         data: dict[str, str] = await request.json()
         
@@ -166,7 +174,11 @@ class Mini(Plugin):
     async def startup(self):
         asgi = ASGI()
 
-        asgi.add_route('/mini-test', self.test_endpoint, ['POST'])
+        for _, method in inspect.getmembers(self, predicate=inspect.ismethod):
+            if hasattr(method, '_endpoint_'):
+                asgi.add_route(f'/{method.__name__}', method, ['POST'])
+
+        # asgi.add_route('/mini-test', self.test_endpoint, ['POST'])
         asgi.add_route('/login', self.login_endpoint, ['POST'])
         asgi.add_route('/bind', self.bind_endpoint, ['POST'])
         asgi.add_route('/user_info', self.user_info_endpoint, ['POST'])
