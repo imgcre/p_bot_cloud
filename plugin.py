@@ -213,18 +213,18 @@ def delegate(*attr, custom_resolver: Optional[Callable[[MethodType, list], Await
                     return asyncio.create_task(wrap_with())
                 return await task()
             
-            async def with_ctx():
-                ctx = self.engine.get_context()
-                if ctx is None:
-                    with self.engine.of() as c, c:
-                        return await ctx_wrapper(c)
+            async def with_custom():
+                if custom_wrapper is None:
+                    return await ctx_wrapper()
                 else:
-                    return await ctx_wrapper(ctx)
+                    return await custom_wrapper(ctx_wrapper)
             
-            if custom_wrapper is None:
-                return await with_ctx()
+            ctx = self.engine.get_context()
+            if ctx is None:
+                with self.engine.of() as c, c:
+                    return await with_custom(c)
             else:
-                return await custom_wrapper(with_ctx)
+                return await with_custom(ctx)
 
         to_unbind(fn)._delegated_ = True
         return wrapper
