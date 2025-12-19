@@ -181,7 +181,7 @@ class BackupMan():
             obj.init_state()
             return obj
 
-def delegate(*attr):
+def delegate(*attr, custom_resolver: Optional[Callable[[MethodType, list], Awaitable[list]]] = None, custom_wrapper: Optional[Callable[[Callable[..., Awaitable]], Awaitable]]=None):
     def deco(fn):
         @wraps(fn)
         async def wrapper(self: 'Plugin', *args, **kwargs):
@@ -190,7 +190,10 @@ def delegate(*attr):
                     bound_method = MethodType(fn, self)
                 else:
                     bound_method = fn
-                resolved = await ctx.resolve_args(bound_method, list(args))
+                if custom_resolver is None:
+                    resolved = await ctx.resolve_args(bound_method, list(args))
+                else:
+                    resolved = await custom_resolver(bound_method, list(args))
 
                 # TODO NEW task dirty out of context!!
                 async def task():
@@ -210,12 +213,18 @@ def delegate(*attr):
                     return asyncio.create_task(wrap_with())
                 return await task()
             
-            ctx = self.engine.get_context()
-            if ctx is None:
-                with self.engine.of() as c, c:
-                    return await ctx_wrapper(c)
+            async def with_ctx():
+                ctx = self.engine.get_context()
+                if ctx is None:
+                    with self.engine.of() as c, c:
+                        return await ctx_wrapper(c)
+                else:
+                    return await ctx_wrapper(ctx)
+            
+            if custom_wrapper is None:
+                return await with_ctx()
             else:
-                return await ctx_wrapper(ctx)
+                return await custom_wrapper(with_ctx)
 
         to_unbind(fn)._delegated_ = True
         return wrapper

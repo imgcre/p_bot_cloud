@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 import inspect
+from types import MethodType
 import aiohttp
 from mirai import get_logger
 from mirai.asgi import ASGI
@@ -11,7 +12,7 @@ from nap_cat_types import GetGroupMemberInfoResp
 from plugin import Inject, InstrAttr, Plugin, autorun, delegate, route
 from utilities import UserSpec
 
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional, Union, get_args, get_origin
 if TYPE_CHECKING:
     from plugins.known_groups import KnownGroups
     from plugins.nap_cat import NapCat
@@ -24,8 +25,49 @@ class UserMan():
 
 logger = get_logger()
 
+def is_optional(t):
+    origin = get_origin(t)
+    args = get_args(t)
+    return origin is Union and len(args) == 2 and args[1] is type(None)
+
+async def endpoint_args_resolver(m: MethodType, args: tuple[Request]):
+    request, = args
+    s = inspect.signature(m)
+    params = [p for p in s.parameters.values() if p.kind not in (p.KEYWORD_ONLY, p.VAR_KEYWORD)]
+    aas = []
+    data: dict[str, str] = await request.json()
+
+    for p in params:
+        anno = p.annotation
+        
+        if anno is Request:
+            aas.append(request)
+            continue
+
+        value = data.get(p.name)
+        if value is None and not is_optional(anno):
+            raise RuntimeError(f'参数"{p.name}"不存在')
+
+        if anno in (str, int, float, bool):
+            aas.append(anno(value))
+            continue
+
+        raise RuntimeError(f'不支持参数"{p.name}"的类型')
+
+async def endpoint_wrapper(func: Callable[[], Awaitable]):
+    try:
+        return JSONResponse({
+            "code": 0,
+            **await func(),
+        })
+    except Exception as e:
+        return JSONResponse({
+            "code": 1,
+            "errMsg": str(e)
+        })
+
 def endpoint(func: Callable):
-    wrapper = delegate()(func)
+    wrapper = delegate(custom_resolver=endpoint_args_resolver, custom_wrapper=endpoint_wrapper)(func)
     wrapper._endpoint_ = True
     return wrapper
 
@@ -60,8 +102,8 @@ class Mini(Plugin):
             if man.openid == openid:
                 return qqid, man
 
-    @delegate()
-    async def user_info_endpoint(self, request: Request):
+    @endpoint
+    async def user_info(self, request: Request):
         # with self.engine.of() as c, c:
         data: dict[str, str] = await request.json()
         openid = data.get("openid")
@@ -92,7 +134,8 @@ class Mini(Plugin):
         })
 
 
-    async def bind_endpoint(self, request: Request):
+    @endpoint
+    async def bind(self, request: Request):
         with self.engine.of() as c, c:
             data: dict[str, str] = await request.json()
 
@@ -132,8 +175,8 @@ class Mini(Plugin):
                 "code": 0
             })
     
-
-    async def login_endpoint(self, request: Request):
+    @endpoint
+    async def login(self, request: Request):
         data: dict[str, str] = await request.json()
 
         code = data.get("code")
@@ -153,22 +196,13 @@ class Mini(Plugin):
 
 
     @endpoint
-    async def test(self, request: Request):
-        # 获取 JSON 数据
-        data: dict[str, str] = await request.json()
+    async def test(self, name: str):
+        if name == 'Lisa':
+            raise RuntimeError('不认识这个人')
         
-        # 或者手动解析
-        # body = await request.body()
-        # if body:
-        #     data = json.loads(body)
-        
-        # 获取特定字段
-        name = data.get("name", "未知")
-        
-        return JSONResponse({
-            "status": "ok",
+        return {
             "name": name
-        })
+        }
 
     @autorun
     async def startup(self):
@@ -179,6 +213,6 @@ class Mini(Plugin):
                 asgi.add_route(f'/{method.__name__}', method, ['POST'])
 
         # asgi.add_route('/mini-test', self.test_endpoint, ['POST'])
-        asgi.add_route('/login', self.login_endpoint, ['POST'])
-        asgi.add_route('/bind', self.bind_endpoint, ['POST'])
-        asgi.add_route('/user_info', self.user_info_endpoint, ['POST'])
+        # asgi.add_route('/login', self.login_endpoint, ['POST'])
+        # asgi.add_route('/bind', self.bind_endpoint, ['POST'])
+        # asgi.add_route('/user_info', self.user_info_endpoint, ['POST'])
