@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 import inspect
+import traceback
 from types import MethodType
 import aiohttp
 from mirai import get_logger
@@ -53,6 +54,8 @@ async def endpoint_args_resolver(m: MethodType, args: tuple[Request]):
             continue
 
         raise RuntimeError(f'不支持参数"{p.name}"的类型')
+    
+    return aas
 
 async def endpoint_wrapper(func: Callable[[], Awaitable]):
     try:
