@@ -509,7 +509,7 @@ class Achv(Plugin, InjectNotifier):
 
         # obtained_cnt = await self.get_achv_collected_count(e)
 
-        return f'{info}: {obtained_cnt}/{info.opts.formatted_target_obtained_cnt}{info.opts.unit}'
+        return f'{info}({info.condition}): {obtained_cnt}/{info.opts.formatted_target_obtained_cnt}{info.opts.unit}'
 
 
     @top_instr('佩戴')
