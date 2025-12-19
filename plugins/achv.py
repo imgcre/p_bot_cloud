@@ -501,7 +501,7 @@ class Achv(Plugin, InjectNotifier):
         if isinstance(p, AchvCustomizer):
             info: AchvInfo = e.value
             if info.opts.custom_progress_str:
-                return f'{info}: {await p.get_progress_str(e, man.achvs[e])}'
+                return f'{info}({info.condition}): {await p.get_progress_str(e, man.achvs[e])}'
         
         # return extra.obtained_cnt
     

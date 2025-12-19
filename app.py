@@ -102,28 +102,28 @@ async def on_message(event: MessageEvent):
             traceback.print_exc()
             await ctx.send()
 
-async def test_endpoint(request: Request):
-    # 获取 JSON 数据
-    data: dict[str, str] = await request.json()
+# async def test_endpoint(request: Request):
+#     # 获取 JSON 数据
+#     data: dict[str, str] = await request.json()
     
-    # 或者手动解析
-    # body = await request.body()
-    # if body:
-    #     data = json.loads(body)
+#     # 或者手动解析
+#     # body = await request.body()
+#     # if body:
+#     #     data = json.loads(body)
     
-    # 获取特定字段
-    name = data.get("name", "未知")
+#     # 获取特定字段
+#     name = data.get("name", "未知")
     
-    return JSONResponse({
-        "status": "success",
-        "name": name
-    })
+#     return JSONResponse({
+#         "status": "success",
+#         "name": name
+#     })
 
 def main():
     engine.load()
 
-    asgi = ASGI()
-    asgi.add_route('/test', test_endpoint, ['POST'])
+    # asgi = ASGI()
+    # asgi.add_route('/test', test_endpoint, ['POST'])
 
     bot.run(host='0.0.0.0')
     

@@ -1,5 +1,6 @@
 
 from dataclasses import dataclass
+from decimal import Decimal
 import aiohttp
 from mirai import get_logger
 from mirai.asgi import ASGI
@@ -13,6 +14,8 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from plugins.known_groups import KnownGroups
     from plugins.nap_cat import NapCat
+    from plugins.check_in import CheckIn
+    from plugins.voucher import Voucher
 
 class UserMan():
     openid: Optional[str] = None
@@ -26,6 +29,8 @@ class Mini(Plugin):
 
     known_groups: Inject['KnownGroups']
     nap_cat: Inject['NapCat']
+    check_in: Inject['CheckIn']
+    voucher: Inject['Voucher']
 
     @delegate()
     async def get_matched_qqids(self, *, nickname: str):
@@ -44,6 +49,47 @@ class Mini(Plugin):
         man = self.users.get_or_create_data(qqid)
         man.openid = openid
 
+    def get_user_man_by_openid(self, openid: str):
+        for qqid, man in self.users.users.items():
+            if man.openid == openid:
+                return qqid, man
+
+
+    async def user_info_endpoint(self, request: Request):
+        data: dict[str, str] = await request.json()
+
+        openid = data.get("openid")
+
+        res = self.get_user_man_by_openid(openid)
+
+        if res is None:
+            return JSONResponse({
+                "code": 1,
+                "errMsg": '用户未绑定'
+            })
+        
+        qqid, man = res
+
+        for group_id in self.known_groups:
+            member = await self.bot.get_group_member(group_id, qqid)
+
+            if member is None:
+                return JSONResponse({
+                    "code": 1,
+                    "errMsg": '群员不存在'
+                })
+
+            async with self.override(member):
+                is_checked_in: bool = await self.check_in.is_checked_in_today()
+                voucher_cnt: Decimal = await self.voucher.get_count()
+        
+        
+        return JSONResponse({
+            "code": 0,
+            "is_checked_in": is_checked_in,
+            "voucher_cnt": str(voucher_cnt),
+        })
+
 
     async def bind_endpoint(self, request: Request):
         with self.engine.of() as c, c:
@@ -52,6 +98,13 @@ class Mini(Plugin):
             nickname = data.get("nickname")
             openid = data.get("openid")
 
+            res = self.get_user_man_by_openid(openid)
+
+            if res is not None:
+                return JSONResponse({
+                    "code": 0
+                })
+            
             logger.info(f'{nickname=}, {openid=}')
 
             matched_qqids: list[int] = await self.get_matched_qqids(nickname=nickname)
@@ -122,3 +175,5 @@ class Mini(Plugin):
         asgi.add_route('/login', self.login_endpoint, ['POST'])
 
         asgi.add_route('/bind', self.bind_endpoint, ['POST'])
+
+        asgi.add_route('/user_info', self.user_info_endpoint, ['POST'])
