@@ -479,7 +479,7 @@ class Achv(Plugin, InjectNotifier):
         else:
             return f'不存在名叫"{aka}"的成就'
         
-        return f'{info}({info.condition})'
+        return f'\n{info}\n{info.condition}'
     
     @top_instr('进度')
     async def achv_progress(self, aka: str, man: Optional[CollectedAchvMan]):
@@ -520,7 +520,7 @@ class Achv(Plugin, InjectNotifier):
 
         # obtained_cnt = await self.get_achv_collected_count(e)
 
-        return f'{info}({info.condition}): {obtained_cnt}/{info.opts.formatted_target_obtained_cnt}{info.opts.unit}'
+        return f'\n{info}\n{info.condition}\n\n{obtained_cnt}/{info.opts.formatted_target_obtained_cnt}{info.opts.unit}'
 
 
     @top_instr('佩戴')
