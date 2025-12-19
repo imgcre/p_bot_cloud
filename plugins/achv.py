@@ -473,13 +473,12 @@ class Achv(Plugin, InjectNotifier):
     @top_instr('说明')
     async def achv_desc(self, aka: str):
         for meta in self.registed_achv.values():
-            e: Optional[AchvEnum] = next((val for e in meta if (val := typing.cast(AchvInfo, e.value)).aka == aka), None)
-            if e is not None:
+            info: Optional[AchvInfo] = next((val for e in meta if (val := typing.cast(AchvInfo, e.value)).aka == aka), None)
+            if info is not None:
                 break
         else:
             return f'不存在名叫"{aka}"的成就'
         
-        info = typing.cast(AchvInfo, e.value)
         return f'{info}({info.condition})'
     
     @top_instr('进度')
