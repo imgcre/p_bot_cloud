@@ -70,7 +70,7 @@ async def endpoint_wrapper(func: Callable[[], Awaitable]):
         return JSONResponse({
             "code": 1,
             "errMsg": str(e)
-        })
+        }, 400)
 
 def endpoint(func: Callable):
     wrapper = delegate(custom_resolver=endpoint_args_resolver, custom_wrapper=endpoint_wrapper)(func)
