@@ -59,9 +59,12 @@ async def endpoint_args_resolver(m: MethodType, args: tuple[Request]):
 
 async def endpoint_wrapper(func: Callable[[], Awaitable]):
     try:
+        res = await func()
+        if res is None:
+            res = {}
         return JSONResponse({
             "code": 0,
-            **await func(),
+            **res,
         })
     except Exception as e:
         return JSONResponse({
@@ -179,10 +182,8 @@ class Mini(Plugin):
             })
     
     @endpoint
-    async def login(self, request: Request):
-        data: dict[str, str] = await request.json()
+    async def login(self, code: str):
 
-        code = data.get("code")
         # 866UZjMprcGQYAHy
         async with aiohttp.ClientSession() as session:
             async with session.get('https://api.q.qq.com/sns/jscode2session', params={
@@ -192,10 +193,9 @@ class Mini(Plugin):
                 'grant_type': 'authorization_code'
             }) as response:
                 j = await response.json()
-                return JSONResponse({
+                return {
                     "openid": j["openid"],
-                })
-        ...
+                }
 
 
     @endpoint
