@@ -109,82 +109,52 @@ class Mini(Plugin):
                 return qqid, man
 
     @endpoint
-    async def user_info(self, request: Request):
-        # with self.engine.of() as c, c:
-        data: dict[str, str] = await request.json()
-        openid = data.get("openid")
-
+    async def user_info(self, openid: str):
         res = self.get_user_man_by_openid(openid)
         if res is None:
-            return JSONResponse({
-                "code": 1,
-                "errMsg": '用户未绑定'
-            })
+            raise RuntimeError('用户未绑定')
         
         qqid, man = res
         for group_id in self.known_groups:
             member = await self.bot.get_group_member(group_id, qqid)
             if member is None:
-                return JSONResponse({
-                    "code": 1,
-                    "errMsg": '群员不存在'
-                })
+                raise RuntimeError('群员不存在')
+
             async with self.override(member):
                 is_checked_in: bool = await self.check_in.is_checked_in_today()
                 voucher_cnt: Decimal = await self.voucher.get_count()
 
-        return JSONResponse({
-            "code": 0,
+        return {
             "is_checked_in": is_checked_in,
             "voucher_cnt": str(voucher_cnt),
-        })
+        }
 
 
     @endpoint
-    async def bind(self, request: Request):
-        with self.engine.of() as c, c:
-            data: dict[str, str] = await request.json()
+    async def bind(self, nickname: str, openid: str):
+        res = self.get_user_man_by_openid(openid)
 
-            nickname = data.get("nickname")
-            openid = data.get("openid")
-
-            res = self.get_user_man_by_openid(openid)
-
-            if res is not None:
-                return JSONResponse({
-                    "code": 0
-                })
-            
-            logger.info(f'{nickname=}, {openid=}')
-
-            matched_qqids: list[int] = await self.get_matched_qqids(nickname=nickname)
-
-            logger.info(f'{matched_qqids=}')
-
-            if len(matched_qqids) == 0:
-                return JSONResponse({
-                    "code": 1,
-                    "errMsg": '未找到匹配的用户'
-                })
+        if res is not None:
+            return
         
-            if len(matched_qqids) > 1:
-                return JSONResponse({
-                    "code": 1,
-                    "errMsg": '用户冲突, 请联系管理员'
-                })
-            
-            qqid = matched_qqids[0]
-            
-            await self.update_user_record(qqid=qqid, openid=openid)
+        logger.info(f'{nickname=}, {openid=}')
 
-            return JSONResponse({
-                "code": 0
-            })
+        matched_qqids: list[int] = await self.get_matched_qqids(nickname=nickname)
+
+        logger.info(f'{matched_qqids=}')
+
+        if len(matched_qqids) == 0:
+            raise RuntimeError('未找到匹配的用户')
+    
+        if len(matched_qqids) > 1:
+            raise RuntimeError('用户冲突, 请联系管理员')
+        
+        qqid = matched_qqids[0]
+        
+        await self.update_user_record(qqid=qqid, openid=openid)
     
     @endpoint
     async def login(self, code: str):
-
-        # 866UZjMprcGQYAHy
         async with aiohttp.ClientSession() as session:
             async with session.get('https://api.q.qq.com/sns/jscode2session', params={
                 'appid': '1112171843',
@@ -196,7 +166,6 @@ class Mini(Plugin):
                 return {
                     "openid": j["openid"],
                 }
-
 
     @endpoint
     async def test(self, name: str):
@@ -214,8 +183,3 @@ class Mini(Plugin):
         for _, method in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(method, '_endpoint_'):
                 asgi.add_route(f'/{method.__name__}', method, ['POST'])
-
-        # asgi.add_route('/mini-test', self.test_endpoint, ['POST'])
-        # asgi.add_route('/login', self.login_endpoint, ['POST'])
-        # asgi.add_route('/bind', self.bind_endpoint, ['POST'])
-        # asgi.add_route('/user_info', self.user_info_endpoint, ['POST'])
