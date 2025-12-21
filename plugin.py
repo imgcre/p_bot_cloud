@@ -97,7 +97,7 @@ class MetaPlugin(type):
     def _get_path(cls, stack_depth = 2):
         frm = inspect.stack()[stack_depth]
         mod = inspect.getmodule(frm[0])
-        data_path = DataPath(os.path.join(os.path.dirname(os.path.abspath(mod.__file__)), mod.__name__.split('.')[-1]))
+        data_path = DataPath(os.path.join(os.path.dirname(os.path.abspath(mod.__file__)), '../configs', mod.__name__.split('.')[-1]))
         return PluginPath(data_path)
 
 
