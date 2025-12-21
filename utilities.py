@@ -876,3 +876,7 @@ class VoucherRecordExtraLiveGiftCompensation():
 @dataclass
 class VoucherRecordChestNotifyTmpEnable():
     ...
+
+@dataclass
+class VoucherRecordKill():
+    ...

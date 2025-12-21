@@ -16,7 +16,7 @@ import random
 import random
 from itertools import groupby
 
-from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvInfo, AchvOpts, AchvRarity, AchvRarityVal, AdminType, Source, Upgraded, User, UserSpec, voucher_round_half_up
+from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvInfo, AchvOpts, AchvRarity, AchvRarityVal, AdminType, Source, Upgraded, User, UserSpec, VoucherRecordKill, voucher_round_half_up
 
 class VoucherAchv(AchvEnum):
     AFRICAN_CHIEFS = 0, '非酋', '连续100次抽奖都未成功', AchvOpts(rarity=AchvRarity.LEGEND, display='🧔🏿', custom_obtain_msg='成为了反方向的欧皇', target_obtained_cnt=100)
@@ -341,7 +341,19 @@ class Voucher(Plugin):
             adj_str = f'降低{1 / changed_rate:f}倍' if factor < 1 else f'提高{changed_rate:f}倍'
             return ['已将', at, f'的获奖概率{adj_str}']
 
-        
+    @top_instr('回滚', InstrAttr.FORCE_BACKUP)
+    async def rollback_cmd(self):
+        async with self.admin.privilege(type=AdminType.SUPER):
+            
+            ...
+        ...
+
+    @top_instr('。。。', InstrAttr.FORCE_BACKUP)
+    async def kill_cmd(self, at: At):
+        async with self.admin.privilege(type=AdminType.SUPER):
+            member = await self.member_from(at=at)
+            async with self.override(member):
+                self.adjust(cnt=Decimal('-100'), force=True, extra=VoucherRecordKill())
 
     @top_instr('富豪榜', InstrAttr.NO_ALERT_CALLER)
     async def get_rich_list_cmd(self, group: Group):
