@@ -353,7 +353,8 @@ class Voucher(Plugin):
         async with self.admin.privilege(type=AdminType.SUPER):
             member = await self.member_from(at=at)
             async with self.override(member):
-                self.adjust(cnt=Decimal('-100'), force=True, extra=VoucherRecordKill())
+                await self.adjust(cnt=Decimal('-100'), force=True, extra=VoucherRecordKill())
+                return 'ok'
 
     @top_instr('富豪榜', InstrAttr.NO_ALERT_CALLER)
     async def get_rich_list_cmd(self, group: Group):
