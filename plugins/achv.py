@@ -114,9 +114,8 @@ class Achv(Plugin, InjectNotifier):
 
         info = typing.cast(AchvInfo, e.value)
 
-        if e in man.achvs:
-            has_achv = man.has_static(e)
-
+        has_achv = await self.has(e)
+        if has_achv:
             if not await self.is_deletable(e) and not force:
                 raise RuntimeError(f'目前还不能撤销{info.aka}')
 
@@ -133,9 +132,7 @@ class Achv(Plugin, InjectNotifier):
             
             self.backup_man.set_dirty()
             await self.update_member_name()
-            return has_achv
-        
-        return None
+        return has_achv
     
     @delegate(InstrAttr.FORCE_BACKUP)
     async def batch_submit(self, e: AchvEnum, op: GroupOp, *, member_ids: Iterable[int], override_obtain_cnt: int = None, silent: bool = False):
