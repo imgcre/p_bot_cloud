@@ -1,0 +1,3 @@
+[submodule "backups"]
+	path = backups
+	url = git@github.com:imgcre/p_bot_states.git

@@ -165,7 +165,7 @@ cython_debug/
 *.crt
 *.csv
 *.ipynb
-backups*/
+backups-*/
 plugins/*/
 /config.py
 logs/
