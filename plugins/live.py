@@ -1544,7 +1544,7 @@ class Live(Plugin, AchvCustomizer):
             if not passed: return
 
         question_bank_path = self.path.data['question_bank']
-        question_file_name = random.choice(os.listdir(question_bank_path))
+        question_file_name = random.choice([fn for fn in os.listdir(question_bank_path) if not fn.startswith('.')])
         print(f'{question_file_name=}')
         
         man.update_state_by_question_file_name(question_file_name, source)
