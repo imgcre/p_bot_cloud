@@ -941,7 +941,7 @@ class Admin(Plugin, AchvCustomizer):
         with open(self.path.data.of_file('forbidden_market_face.json'), encoding='utf-8') as f:
             forbidden_market_face_o: dict[str, dict[str, int]] = json.load(f)
 
-        image_hashes = [imagehash.hex_to_multihash(file_name.split('.')[0]) for file_name in os.listdir(self.path.data['hashes'])]
+        image_hashes = [imagehash.hex_to_multihash(file_name.split('.')[0]) for file_name in os.listdir(self.path.data['hashes']) if not file_name.startswith('.')]
 
         url_regex = r'(https?:\/\/)((([0-9a-z]+\.)+[a-z]+)|(([0-9]{1,3}\.){3}[0-9]{1,3}))(:[0-9]+)?(\/[0-9a-z%/.\-_]*)?(\?[0-9a-z=&%_\-]*)?(\#[0-9a-z=&%_\-]*)?'
         url_pattern  = re.compile(url_regex)
