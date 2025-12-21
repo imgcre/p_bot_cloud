@@ -6,7 +6,7 @@ import traceback
 from typing import Callable, TYPE_CHECKING, Final, Optional
 
 from mirai import At
-import config
+import configs.config as config
 from plugin import Inject, InstrAttr, Plugin, delegate, enable_backup, route, top_instr
 from mirai.models.entities import GroupMember
 from utilities import AchvRarity, GroupLocalStorage, GroupMemberOp, MsgOp, Source, ensure_attr, get_delta_time_str, guard_attr, is_nested, throttle_config, to_unbind

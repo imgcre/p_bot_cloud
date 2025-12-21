@@ -10,7 +10,7 @@ import traceback
 import typing
 
 import cn2an
-import config
+import configs.config as config
 from event_types import AchvRemovedEvent, ViolationEvent
 from plugin import AchvCustomizer, Inject, Plugin, any_instr, autorun, delegate, enable_backup, InstrAttr, route, timer, top_instr
 from aiomqtt import Client

@@ -11,7 +11,7 @@ from plugin import CommandNotFoundError
 from mirai.models.events import MemberCardChangeEvent, GroupRecallEvent, NudgeEvent, MemberJoinRequestEvent, MemberJoinEvent, MemberUnmuteEvent, BotOfflineEventActive, BotOfflineEventForce, BotOfflineEventDropped, GroupMessage, FriendMessage, StrangerMessage, TempMessage
 from mirai.models.api import RespOperate
 import zhconv
-import config
+import configs.config as config
 
 from mirai.asgi import ASGI
 from starlette.requests import Request

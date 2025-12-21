@@ -12,7 +12,7 @@ from collections import Iterable
 from itertools import groupby
 
 from activator import SharpActivator
-import config
+import configs.config as config
 from event_types import EffectiveSpeechEvent, ViolationEvent
 import aiohttp
 from mirai import At, AtAll, Event, Face, GroupMessage, Image, MessageChain, MessageEvent, Plain, TempMessage

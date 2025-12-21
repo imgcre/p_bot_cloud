@@ -1,6 +1,5 @@
 from email.headerregistry import Group
 from typing import Optional, Type, TypeVar, Union, overload
-import config
 from mirai import GroupMessage, MessageChain, At
 from plugin import Plugin, delegate, top_instr, route, enable_backup, Inject
 from mirai.models.message import Forward, ForwardMessageNode, MessageComponent

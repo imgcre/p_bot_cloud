@@ -7,7 +7,6 @@ from itertools import groupby
 import sys
 import time
 from typing import Awaitable, Callable, Dict, Optional, Union
-import config
 from event_types import AchvObtainedEvent, AchvRemovedEvent
 from mirai import At
 from plugin import AchvCustomizer, Inject, InjectNotifier, InstrAttr, Plugin, any_instr, card_changed_instr, delegate, top_instr, route, enable_backup

@@ -1,7 +1,7 @@
 import asyncio
 import traceback
 import uuid
-import config
+import configs.config as config
 from event_types import ViolationEvent
 from mirai import At, Image, Plain, GroupMessage, MessageChain, MessageEvent, Voice
 from plugin import Context, Inject, Plugin, autorun, delegate, instr, fall_instr, nudge_instr, recall_instr, top_instr, InstrAttr, route

@@ -1,5 +1,5 @@
 from typing import Optional
-import config
+import configs.config as config
 from mirai import GroupMessage, MessageChain, At
 from plugin import Plugin, top_instr, route, enable_backup, Inject
 from mirai.models.message import Forward, ForwardMessageNode, MessageComponent
