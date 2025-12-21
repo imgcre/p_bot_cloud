@@ -1,7 +1,7 @@
 import json
-import nest_asyncio
+# import nest_asyncio
 
-nest_asyncio.apply()
+# nest_asyncio.apply()
 # NFC先改，改完在这里测试
 import traceback
 from activator import SharpActivator
