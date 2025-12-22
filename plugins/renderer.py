@@ -27,8 +27,6 @@ class Renderer(Plugin):
     def __init__(self):
         self.render_lock = asyncio.Lock()
 
-        
-
     @autorun
     async def startup(self):
         ...
@@ -40,7 +38,7 @@ class Renderer(Plugin):
             args=[
                 '--headless',
                 '--disable-web-security', 
-                '--enable-gpu', 
+                # '--enable-gpu', 
                 '--no-sandbox',
                 '--use-gl=angle',
                 '--use-angle=gl',
@@ -50,7 +48,10 @@ class Renderer(Plugin):
                 '--disable-features=IsolateOrigins',
                 '--disable-site-isolation-trials',
                 '--hide-scrollbars',
-
+                '--single-process',
+                '--in-process-gpu',
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
                 # '--autoplay-policy=no-user-gesture-required',
 
             ])
