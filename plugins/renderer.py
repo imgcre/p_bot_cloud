@@ -52,6 +52,11 @@ class Renderer(Plugin):
                 '--in-process-gpu',
                 '--disable-gpu',
                 '--disable-dev-shm-usage',
+                '--disable-extensions',
+                '--enable-features=NetworkServiceInProcess',
+                '--no-first-run',
+                '--disable-sync',
+                '--disable-background-networking',
                 # '--autoplay-policy=no-user-gesture-required',
 
             ])
