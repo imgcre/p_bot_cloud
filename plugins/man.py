@@ -2,6 +2,7 @@ from plugin import Plugin, instr, InstrAttr, route, PathArg, top_instr
 import gc
 import time
 from collections import defaultdict
+import objgraph
 
 class IncrementalObjectTracker:
     def __init__(self):
@@ -64,6 +65,14 @@ class Man(Plugin):
         for obj_type, growth in leaking_types.items():
             print(f"  {obj_type}: 增长了 {growth} 个")
         return 'ok'
+    
+    @top_instr('内存监控')
+    async def monitor_mem_cmd(self):
+        objgraph.show_backrefs(
+            objgraph.by_type('deque')[:5], 
+            max_depth=10,
+            filename='/root/projects/dat.dot'
+        )
     
     # @instr('list', InstrAttr.NO_ALERT_CALLER)
     # @admin
