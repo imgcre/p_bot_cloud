@@ -710,6 +710,8 @@ class Fur(Plugin):
                 refer_image_file_paths = []
                 for path, subdirs, files in os.walk(root_dir):
                     for name in files:
+                        if name.startswith('.'):
+                            continue
                         refer_image_file_paths.append(os.path.join(path, name))
                 refer_image_file_path = random.choice([rifp for rifp in refer_image_file_paths if rifp not in lo_fetch_img_path_history])
                 pure_path = pathlib.PurePath(refer_image_file_path)
