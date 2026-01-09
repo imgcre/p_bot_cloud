@@ -1568,6 +1568,9 @@ class Live(Plugin, AchvCustomizer):
         if not isinstance(man.state, MusicStateSelect): return
 
         song_order = re.search('\d+|一|二|三|四|五', text)
+        if song_order is None:
+            return
+        
         order = int(cn2an.cn2an(song_order.group(), 'smart'))
 
         try:
