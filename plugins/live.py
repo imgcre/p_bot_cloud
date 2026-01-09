@@ -275,9 +275,9 @@ class MusicStateIdle(MusicState):
     ...
 
 @dataclass
-class MusicStateSelect(MusicState):
+class MusicStateSelect(MusicState, Upgraded):
     id: str
-    ...
+    created_ts: float = field(default_factory=time.time)
 
 @dataclass
 class MusicMan():
@@ -727,7 +727,8 @@ class Live(Plugin, AchvCustomizer):
                 '请 ', 
                 At(target=pending.source.member.id), 
                 ' 选择序号(回复0取消):\n', 
-                '\n'.join([f'{i + 1}: 《{s["name"]}》 -{s["author"]}' for i, s in enumerate(j['songs'])])
+                '\n'.join([f'{i + 1}: 《{s["name"]}》 -{s["author"]}' for i, s in enumerate(j['songs'])]),
+                *(['*没有可供选择的歌曲*'] if len(j['songs']) == 0 else []),
             ])
         if message.topic.matches('/live/event/screen_record_done'):
             j = json.loads(message.payload)
@@ -1569,6 +1570,9 @@ class Live(Plugin, AchvCustomizer):
 
         song_order = re.search('\d+|一|二|三|四|五', text)
         if song_order is None:
+            if time.time() - man.state.created_ts > 5 * 60:
+                man.state = MusicStateIdle()
+                self.backup_man.set_dirty()
             return
         
         order = int(cn2an.cn2an(song_order.group(), 'smart'))
