@@ -570,43 +570,49 @@ class Live(Plugin, AchvCustomizer):
         logger.debug(f'{message.topic=}')
         if message.topic.matches('/live/status/started') and self.live_stat is None:
             self.live_stat = LiveStat()
+
+            for group_id in self.known_groups:
+                group = await self.bot.get_group(group_id)
+                async with self.override(group):
+                    await self.update_group_name_based_on_live_status()
+
             # room = live.LiveRoom(config.BILIBILI_LIVEROOM_ID)
             # room_info = (await room.get_room_info())['room_info']
             # title = room_info['title']
             # cover_img_url = room_info['cover']
             # room_id = room_info['room_id']
 
-            for group_id in self.known_groups:
-                group = await self.bot.get_group(group_id)
-                async with self.override(group):
-                    await self.update_group_name_based_on_live_status()
-                # TODO
-                text1 = '\n'.join([
-                    '啵啦啵啦',
-                ])
+            # for group_id in self.known_groups:
+            #     group = await self.bot.get_group(group_id)
+            #     async with self.override(group):
+            #         await self.update_group_name_based_on_live_status()
+            #     # TODO
+            #     text1 = '\n'.join([
+            #         '啵啦啵啦',
+            #     ])
 
-                # 🛠️✨
-                text2 = '\n'.join([
-                    'changelog: ',
-                    '🛠️修复了老观众无法点歌的bug',
-                    '✨老观众在开播后可以先点几首歌',
-                ])
+            #     # 🛠️✨
+            #     text2 = '\n'.join([
+            #         'changelog: ',
+            #         '🛠️修复了老观众无法点歌的bug',
+            #         '✨老观众在开播后可以先点几首歌',
+            #     ])
 
-                text3 = '\n'.join([
-                    "目前可以公开的情报:",
-                    '#踩我: 在直播间生成一只地鼠',
-                    '#多久到我: 查询点歌的排队时长',
-                    f'#宝箱提醒: 开启👉本次👈毛啵的宝箱生成提醒(消耗0.1{VOUCHER_UNIT}{VOUCHER_NAME})',
-                    '#切换伴奏',
-                ])
+            #     text3 = '\n'.join([
+            #         "目前可以公开的情报:",
+            #         '#踩我: 在直播间生成一只地鼠',
+            #         '#多久到我: 查询点歌的排队时长',
+            #         f'#宝箱提醒: 开启👉本次👈毛啵的宝箱生成提醒(消耗0.1{VOUCHER_UNIT}{VOUCHER_NAME})',
+            #         '#切换伴奏',
+            #     ])
 
-                texts = [text1, text2, text3]
+            #     texts = [text1, text2, text3]
 
-                for text in texts:
-                    await self.bot.send_group_message(group_id, [
-                        text
-                    ])
-                    await asyncio.sleep(2)
+            #     for text in texts:
+            #         await self.bot.send_group_message(group_id, [
+            #             text
+            #         ])
+            #         await asyncio.sleep(2)
                 # await self.bot.anno_publish(
                 #     group_id,
                 #     '\n'.join([
@@ -939,6 +945,36 @@ class Live(Plugin, AchvCustomizer):
                 await self.bot.send_group_message(group_id, [
                     At(target=member.id), f' 你有一首歌曲即将开始播放, 排到时未进入直播间将自动取消播放'
                 ])
+        if message.topic.matches('/live/event/started'):
+            j = json.loads(message.payload)
+            changelog = j['changelog']
+
+            for group_id in self.known_groups:
+                texts = []
+
+                texts.append('\n'.join([
+                    '啵啦啵啦！',
+                ]))
+
+                if len(changelog) > 0:
+                    texts.append('\n'.join([
+                        '本次更新: ',
+                        *changelog
+                    ]))
+                    
+                texts.append('\n'.join([
+                    "目前可以公开的情报:",
+                    '#踩我: 在直播间生成一只地鼠',
+                    '#多久到我: 查询点歌的排队时长',
+                    f'#宝箱提醒: 开启👉本次👈毛啵的宝箱生成提醒(消耗0.1{VOUCHER_UNIT}{VOUCHER_NAME})',
+                    '#切换伴奏',
+                ]))
+
+                for text in texts:
+                    await self.bot.send_group_message(group_id, [
+                        text
+                    ])
+                    await asyncio.sleep(2)
 
     def inc_cache_price(self, openid: str, price: int):
         if openid not in self.unbound_account_caches:
