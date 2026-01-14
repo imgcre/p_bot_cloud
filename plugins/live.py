@@ -648,10 +648,28 @@ class Live(Plugin, AchvCustomizer):
             confirm_code = j['confirm_code']
             openid = j['openid']
             uname = j['uname']
+
             found_item = next((item for item in self.user_binds.users.items() if item[1].check_confirm_code(confirm_code)), None)
             if found_item is None:
                 return
+            
             qq_id, user_bind_info = found_item
+            if not isinstance(user_bind_info.bind_state, BindStateWaitOpenId):
+                return
+
+            from_group_id = user_bind_info.bind_state.from_group_id
+
+            bili_found_item = next((item for item in self.user_binds.users.items() if item[1].check_open_id(openid)), None)
+            if bili_found_item is not None: # 对应的openid已经与某个用户绑定了
+                already_qq, _ = bili_found_item
+                user_bind_info.unbind()
+                self.backup_man.set_dirty()
+                await self.bot.send_group_message(from_group_id, [
+                    At(target=qq_id),
+                    f"该b站账号已经和其他qq({already_qq})绑定了"
+                ])
+                return
+
             from_group_id, two_f_code = user_bind_info.end_bind(openid, uname)
             await self.bot.send_group_message(from_group_id, [
                 At(target=qq_id),
