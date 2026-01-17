@@ -91,7 +91,7 @@ class Man(Plugin):
         )
 
     @any_instr()
-    def update_chat_lock(self):
+    async def update_chat_lock(self):
         subprocess.Popen('touch /root/projects/p_bot_man/chat.lock', shell=True)
 
     @handler
