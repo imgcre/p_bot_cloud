@@ -110,18 +110,19 @@ class Man(Plugin):
                 '睡觉啦💤'
             ])
 
-    @delegate(InstrAttr.FORCE_BACKUP)
+    @delegate()
     async def hello(self):
         if self.has_said_goodbye:
+            self.backup_man.set_dirty()
             self.has_said_goodbye = False
             for group_id in self.known_groups:
                 await self.bot.send_group_message(group_id, [
-                    '睡觉啦💤'
+                    '睡醒啦~'
                 ])
 
     @autorun
     async def auto_hello(self, ctx: Context):
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
         with ctx:
             await self.hello()
     
