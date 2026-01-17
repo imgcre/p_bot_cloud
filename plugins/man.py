@@ -1,8 +1,20 @@
-from plugin import Plugin, instr, InstrAttr, route, PathArg, top_instr
+import asyncio
+from decimal import Context
+import os
+import subprocess
+from typing import TYPE_CHECKING
+from event_types import LiveStartedEvent, LiveStoppedEvent
+from plugin import Inject, Plugin, any_instr, autorun, delegate, instr, InstrAttr, route, PathArg, top_instr
 import gc
 import time
 from collections import defaultdict
 import objgraph
+
+from utilities import handler
+
+if TYPE_CHECKING:
+    from plugins.events import Events
+    from plugins.known_groups import KnownGroups
 
 class IncrementalObjectTracker:
     def __init__(self):
@@ -48,6 +60,11 @@ class IncrementalObjectTracker:
 
 @route('man')
 class Man(Plugin):
+    has_said_goodbye: bool = False
+
+    events: Inject['Events']
+    known_groups: Inject['KnownGroups']
+    
     def __init__(self):
         self.tracker = None
 
@@ -73,6 +90,41 @@ class Man(Plugin):
             max_depth=10,
             filename='/root/projects/dat.dot'
         )
+
+    @any_instr()
+    def update_chat_lock(self):
+        subprocess.Popen('touch /root/projects/p_bot_man/chat.lock', shell=True)
+
+    @handler
+    async def on_live_started(self, event: LiveStartedEvent):
+        subprocess.Popen('touch /root/projects/p_bot_man/live.lock', shell=True)
+
+    @handler
+    async def on_live_stopped(self, event: LiveStoppedEvent):
+        subprocess.Popen('rm -f /root/projects/p_bot_man/live.lock', shell=True)
+
+    @delegate(InstrAttr.FORCE_BACKUP)
+    async def bye(self):
+        self.has_said_goodbye = True
+        for group_id in self.known_groups:
+            await self.bot.send_group_message(group_id, [
+                '睡觉啦💤'
+            ])
+
+    @delegate(InstrAttr.FORCE_BACKUP)
+    async def hello(self):
+        if self.has_said_goodbye:
+            self.has_said_goodbye = False
+            for group_id in self.known_groups:
+                await self.bot.send_group_message(group_id, [
+                    '睡觉啦💤'
+                ])
+
+    @autorun
+    async def auto_hello(self, ctx: Context):
+        await asyncio.sleep(3)
+        with ctx:
+            await self.hello()
     
     # @instr('list', InstrAttr.NO_ALERT_CALLER)
     # @admin

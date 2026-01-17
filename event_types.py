@@ -21,3 +21,11 @@ class ViolationEvent():
     hint: Optional[str]
     count: int
     dec: bool = False
+
+@dataclass
+class LiveStartedEvent():
+    ...
+
+@dataclass
+class LiveStoppedEvent():
+    ...

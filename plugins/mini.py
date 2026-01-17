@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 from nap_cat_types import GetGroupMemberInfoResp
 from plugin import Inject, InstrAttr, Plugin, autorun, delegate, route
 from utilities import UserSpec
+import configs.config as config
 
 from typing import TYPE_CHECKING, Awaitable, Callable, Optional, Union, get_args, get_origin
 if TYPE_CHECKING:
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from plugins.nap_cat import NapCat
     from plugins.check_in import CheckIn
     from plugins.voucher import Voucher
+    from plugins.man import Man
 
 class UserMan():
     openid: Optional[str] = None
@@ -85,6 +87,7 @@ class Mini(Plugin):
     nap_cat: Inject['NapCat']
     check_in: Inject['CheckIn']
     voucher: Inject['Voucher']
+    man: Inject['Man']
 
     @delegate()
     async def get_matched_qqids(self, *, nickname: str):
@@ -175,6 +178,11 @@ class Mini(Plugin):
         return {
             "name": name
         }
+    
+    @endpoint
+    async def byebye(self, code: str):
+        if code == config.BYEBYE_CODE:
+            await self.man.bye()
 
     @autorun
     async def startup(self):

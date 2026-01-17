@@ -11,7 +11,7 @@ import typing
 
 import cn2an
 import configs.config as config
-from event_types import AchvRemovedEvent, ViolationEvent
+from event_types import AchvRemovedEvent, LiveStartedEvent, LiveStoppedEvent, ViolationEvent
 from plugin import AchvCustomizer, Inject, Plugin, any_instr, autorun, delegate, enable_backup, InstrAttr, route, timer, top_instr
 from aiomqtt import Client
 import aiomqtt
@@ -570,70 +570,14 @@ class Live(Plugin, AchvCustomizer):
         logger.debug(f'{message.topic=}')
         if message.topic.matches('/live/status/started') and self.live_stat is None:
             self.live_stat = LiveStat()
-
             for group_id in self.known_groups:
                 group = await self.bot.get_group(group_id)
                 async with self.override(group):
                     await self.update_group_name_based_on_live_status()
-
-            # room = live.LiveRoom(config.BILIBILI_LIVEROOM_ID)
-            # room_info = (await room.get_room_info())['room_info']
-            # title = room_info['title']
-            # cover_img_url = room_info['cover']
-            # room_id = room_info['room_id']
-
-            # for group_id in self.known_groups:
-            #     group = await self.bot.get_group(group_id)
-            #     async with self.override(group):
-            #         await self.update_group_name_based_on_live_status()
-            #     # TODO
-            #     text1 = '\n'.join([
-            #         '啵啦啵啦',
-            #     ])
-
-            #     # 🛠️✨
-            #     text2 = '\n'.join([
-            #         'changelog: ',
-            #         '🛠️修复了老观众无法点歌的bug',
-            #         '✨老观众在开播后可以先点几首歌',
-            #     ])
-
-            #     text3 = '\n'.join([
-            #         "目前可以公开的情报:",
-            #         '#踩我: 在直播间生成一只地鼠',
-            #         '#多久到我: 查询点歌的排队时长',
-            #         f'#宝箱提醒: 开启👉本次👈毛啵的宝箱生成提醒(消耗0.1{VOUCHER_UNIT}{VOUCHER_NAME})',
-            #         '#切换伴奏',
-            #     ])
-
-            #     texts = [text1, text2, text3]
-
-            #     for text in texts:
-            #         await self.bot.send_group_message(group_id, [
-            #             text
-            #         ])
-            #         await asyncio.sleep(2)
-                # await self.bot.anno_publish(
-                #     group_id,
-                #     '\n'.join([
-                #         f'📢小猫咪偷偷开播啦!',
-                #         title,
-                #         f'https://live.bilibili.com/{room_id}',
-                #         '目前可以用的指令:',
-                #         '#截屏',
-                #         '#录屏（动图，需要久等',
-                #         '#点歌',
-                #         '#点歌队列',
-                #     ]),
-                #     send_to_new_member=True,
-                #     pinned=True,
-                #     show_edit_card=False,
-                #     show_popup=True,
-                #     require_confirmation=True,
-                #     image_url=cover_img_url
-                # )
+            await self.events.emit(LiveStartedEvent())
         if message.topic.matches('/live/status/stopped'):
             await self.on_live_stopped()
+            await self.events.emit(LiveStoppedEvent())
         if message.topic.matches('/live/resp/+'):
             j = json.loads(message.payload)
             req_id = j['id']
