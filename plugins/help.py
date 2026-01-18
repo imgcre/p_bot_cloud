@@ -5,6 +5,10 @@ from utilities import AchvInfo
 @route('帮助系统')
 class Help(Plugin):
     
+    @top_instr('notfound')
+    async def notfound(self, cmd_name: str):
+        return f'指令"{cmd_name}"不存在'
+
     @top_instr('帮助')
     async def help(self, sub_cmd: Optional[str]):
         from plugins.admin import AdminAchv

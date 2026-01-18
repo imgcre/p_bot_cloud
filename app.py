@@ -94,7 +94,8 @@ async def on_message(event: MessageEvent):
         except CommandNotFoundError as e:
             traceback.print_exc()
             try:
-                await ctx.exec_cmd(['ai', *chain])
+                await ctx.exec_cmd(['notfound', *chain])
+                # await ctx.exec_cmd(['ai', *chain])
             except: ...
             ...
         except Exception as e:
