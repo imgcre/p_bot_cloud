@@ -1140,7 +1140,7 @@ class Admin(Plugin, AchvCustomizer):
                                 if time.time() - info.last_sent_time > 60 * 60 * 24 * 3:
                                     await try_recall('@潜水成员')
                                     return
-                                if c.target not in config.SUPER_ADMINS and time.time() - info.last_sent_time > 60 * 60:
+                                if c.target in config.SUPER_ADMINS and time.time() - info.last_sent_time > 60 * 60:
                                     await try_recall('吵猫睡觉')
                                     return 
             except: 
