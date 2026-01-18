@@ -236,6 +236,7 @@ class Admin(Plugin, AchvCustomizer):
     gspec_mam: GroupSpec[MemberAssociateMan] = GroupSpec[MemberAssociateMan]()
     gspec_message_history_man: GroupSpec[MessageHistoryMan] = GroupSpec[MessageHistoryMan]()
     last_auto_clean_all_violation_cnt_ts: int = 0
+
     events: Inject['Events']
     achv: Inject['Achv']
     live: Inject['Live']
@@ -1135,14 +1136,13 @@ class Admin(Plugin, AchvCustomizer):
                             async with self.override(target):
                                 info: GetGroupMemberInfoResp = await self.nap_cat.get_group_member_info()
                             # span = datetime.now().replace(tzinfo=None) - target.last_speak_timestamp.replace(tzinfo=None)
-                            if time.time() - info.last_sent_time > 60 * 60 * 24 * 3:
-                                await try_recall('@潜水成员')
-                                return
-                        if c.target in config.SUPER_ADMINS and c.target not in quote_senders:
-                            await try_recall('吵猫睡觉')
-                            return 
-                        ...
-                ...
+                            if c.target not in quote_senders:
+                                if time.time() - info.last_sent_time > 60 * 60 * 24 * 3:
+                                    await try_recall('@潜水成员')
+                                    return
+                                if c.target not in config.SUPER_ADMINS and time.time() - info.last_sent_time > 60 * 60:
+                                    await try_recall('吵猫睡觉')
+                                    return 
             except: 
                 traceback.print_exc()
 
