@@ -501,7 +501,7 @@ class Admin(Plugin, AchvCustomizer):
     @top_instr('设精')
     async def set_essence(self, group: Group, quote: Quote):
         async with self.privilege():
-            await self.bot.set_essence(quote.id, group.id)
+            await self.nap_cat.set_essence_msg(quote.id)
 
     @top_instr('设置管理')
     async def set_admin(self, group: Group, at: At):

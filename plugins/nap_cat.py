@@ -41,9 +41,13 @@ class NapCat(Plugin):
             "group_id": group_id
         }, list[GetGroupMemberListRespItem])
 
-    
     @overload
     async def get_group_member_info(self) -> GetGroupMemberInfoResp: ...
+
+    async def set_essence_msg(self, message_id: int):
+        return await self.call('/set_essence_msg', {
+            "message_id": message_id,
+        })
 
     @delegate()
     async def get_group_member_info(self, member: GroupMember) -> GetGroupMemberInfoResp:
