@@ -331,12 +331,16 @@ class Admin(Plugin, AchvCustomizer):
     async def make_mistakes_cmd(self):
          await self.make_mistakes()
 
-    @top_instr('猫德')
-    async def show_morality_cmd(self, man: ViolationMan):
+    @delegate()
+    async def get_morality(self, man: ViolationMan):
         morality = -man.count
         if morality < -100:
             return f'当前猫德 < -100'
         return f'当前猫德: {morality}'
+
+    @top_instr('猫德')
+    async def show_morality_cmd(self):
+        return await self.get_morality()
 
     @top_instr('驱逐投票')
     async def expulsion_vote(self, at: At):
@@ -829,9 +833,11 @@ class Admin(Plugin, AchvCustomizer):
                 bind_hint = '在直播间将你的QQ号作为弹幕内容发送出去并' if not (await self.live.is_user_bound()) else ''
                 live_hint = f'({bind_hint}在直播间连续点击画面可增加猫德'
 
+            morality = await self.get_morality()
+
             await gop.send([
                 At(target=member.id), 
-                ' 由于', *reason, f', 猫德{plus}{-to}, 当前猫德: {-man.count}{live_hint}'
+                ' 由于', *reason, f', 猫德{plus}{-to}, {morality}{live_hint}'
             ])
 
         if to <= 0:
