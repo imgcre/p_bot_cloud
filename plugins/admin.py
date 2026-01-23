@@ -790,7 +790,7 @@ class Admin(Plugin, AchvCustomizer):
 
     @delegate(InstrAttr.FORCE_BACKUP)
     async def inc_violation_cnt(self, member: GroupMember, gop: GroupOp, man: ViolationMan, *, reason: str=None, to: int=1, hint: str=None):
-        if await self.achv.has(AdminAchv.READY_FOR_PURGE):
+        if  to > 0 and await self.achv.has(AdminAchv.READY_FOR_PURGE):
             await self.kick_target(member.id)
             return
         
@@ -827,8 +827,12 @@ class Admin(Plugin, AchvCustomizer):
                 ' 由于', *reason, f', 猫德{plus}{-to}, 当前猫德: {-man.count}{live_hint}'
             ])
 
+        if to <= 0:
+            return
+
         member_join_ts = datetime.timestamp(member.join_timestamp)
         original_sin_obtained_ts: Union[None, float] = await self.achv.get_achv_obtained_ts(AdminAchv.ORIGINAL_SIN)
+
         if man.count > self.VIOLATION_READY_FOR_PURGE_THRESHOLD and original_sin_obtained_ts is not None and original_sin_obtained_ts > member_join_ts:
             await self.achv.submit(AdminAchv.ALOOF)
 
