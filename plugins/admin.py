@@ -78,25 +78,27 @@ class BrushHistory():
     continuous_count: int = 0
     prev_has_orignial_sin: bool = False
 
-    def next(self, member: GroupMember, has_orignial_sin: bool):
+    def next(self, member_ids: set[int], has_orignial_sin: bool):
         if has_orignial_sin and self.prev_has_orignial_sin:
             self.continuous_count += 1
-            self.members_set.add(member.id)
+            self.members_set.update(member_ids)
         else:
-            if member.id in self.members_set:
+            
+            if len(self.members_set.intersection(member_ids)) > 0:
                 self.continuous_count += 1
             else:
                 self.continuous_count = 1 
 
             # self.members_set = { member.id }
-            if member.id not in config.SUPER_ADMINS:
-                self.members_set = { member.id }
+            
+            if len(self.members_set.intersection(config.SUPER_ADMINS)) == 0:
+                self.members_set = set(member_ids)
             else:
                 self.members_set = set()
 
         self.prev_has_orignial_sin = has_orignial_sin
         
-        logger.debug(f'{member.group.get_name()} {self.members_set=} {self.continuous_count=}')
+        logger.debug(f'{self.members_set=} {self.continuous_count=}')
 
     def clean_member_set(self):
         self.members_set = set()
@@ -736,7 +738,7 @@ class Admin(Plugin, AchvCustomizer):
     async def brush_warning(self, history: BrushHistory, member: GroupMember, gop: GroupOp, fur: Inject['Fur']):
         try:
             has_orignial_sin = await self.achv.has(AdminAchv.ORIGINAL_SIN)
-            history.next(member, has_orignial_sin)
+            history.next(await self.get_associated(member_id=member.id), has_orignial_sin)
             # print(f'{history.members_set=}')
             if history.is_violated():
                 saved_mute_targets = history.members_set
