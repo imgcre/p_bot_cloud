@@ -331,6 +331,10 @@ class Admin(Plugin, AchvCustomizer):
     async def make_mistakes_cmd(self):
          await self.make_mistakes()
 
+    @top_instr('猫德')
+    async def show_morality_cmd(self, man: ViolationMan):
+        return f'当前猫德: {-man.count}'
+
     @top_instr('驱逐投票')
     async def expulsion_vote(self, at: At):
         ...
