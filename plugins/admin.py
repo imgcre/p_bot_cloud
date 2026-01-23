@@ -333,7 +333,10 @@ class Admin(Plugin, AchvCustomizer):
 
     @top_instr('猫德')
     async def show_morality_cmd(self, man: ViolationMan):
-        return f'当前猫德: {-man.count}'
+        morality = -man.count
+        if morality < -100:
+            return f'当前猫德 < -100'
+        return f'当前猫德: {morality}'
 
     @top_instr('驱逐投票')
     async def expulsion_vote(self, at: At):
