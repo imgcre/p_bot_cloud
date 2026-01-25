@@ -19,7 +19,7 @@ from mirai import At, AtAll, Event, Face, GroupMessage, Image, MessageChain, Mes
 from mirai.models.entities import GroupMember, MemberInfoModel, Group
 from plugin import AchvCustomizer, Context, Inject, InstrAttr, MessageContext, PathArg, Plugin, any_instr, autorun, delegate, enable_backup, join_req_instr, joined_instr, recall_instr, route, top_instr
 from utilities import AchvEnum, AchvExtra, AchvOpts, AchvRarity, AdminType, GroupLocalStorage, GroupOp, GroupSpec, ProxyContext, RewardEnum, Upgraded, get_logger, handler, throttle_config
-from mirai.models.events import GroupRecallEvent, MemberJoinRequestEvent
+from mirai.models.events import GroupRecallEvent, MemberJoinRequestEvent, MemberJoinEvent
 import traceback
 from mirai.models.api import RespOperate
 from mirai.models.message import App, MusicShare, Quote, MarketFace, Source, Forward, ForwardMessageNode, ShortVideo, File
@@ -276,8 +276,7 @@ class Admin(Plugin, AchvCustomizer):
         ...
 
     @joined_instr()
-    async def handle_joined(self, member: GroupMember, man: Optional[ViolationMan], fur: Inject['Fur']):
-
+    async def handle_joined(self, event: MemberJoinEvent, member: GroupMember, man: Optional[ViolationMan], fur: Inject['Fur']):
         info: GetGroupMemberInfoResp = await self.nap_cat.get_group_member_info()
         
         # profile = await self.bot.member_profile(member.group.id, member.id)
@@ -285,15 +284,25 @@ class Admin(Plugin, AchvCustomizer):
 
         res = []
 
+        inviter_has_purge = False
+        if event.invitor is not None:
+            async with self.override(event.invitor):
+                inviter_has_purge = await self.achv.has(AdminAchv.READY_FOR_PURGE)
+
         if man is not None:
             await self.achv.submit(AdminAchv.ENDLESS_REINCARNATION)
             pic_res = await fur.deliver_light_bulb(factor=10)
             if pic_res is not None:
                 res.extend(pic_res)
 
-        if info.qq_level < 16 and not await self.achv.has(AdminAchv.READY_FOR_PURGE):
-            await self.achv.submit(AdminAchv.READY_FOR_PURGE, silent=True)
-            res.extend(['由于您当前QQ等级过低, bot为您标记了【机票】, 期间若存在刷屏等违规行为, 将会被bot飞踢'])
+        if  not await self.achv.has(AdminAchv.READY_FOR_PURGE):
+            if info.qq_level < 16:
+                await self.achv.submit(AdminAchv.READY_FOR_PURGE, silent=True)
+                res.extend(['由于您当前QQ等级过低, bot为您标记了【机票】, 期间若存在刷屏等违规行为, 将会被bot飞踢'])
+            elif inviter_has_purge:
+                await self.achv.submit(AdminAchv.READY_FOR_PURGE, silent=True)
+                res.extend(['由于您的邀请人拥有【机票】, bot为您标记了【机票】, 期间若存在刷屏等违规行为, 将会被bot飞踢'])
+            
         
         await self.achv.update_member_name()
 
