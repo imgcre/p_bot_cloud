@@ -613,12 +613,12 @@ class Fur(Plugin):
 
             fur_path = self.path.data[who]
 
-            if not os.path.exists(fur_path):
-                raise FurNotFoundException(f'没有找到{who_nick}的返图')
-            
             if '灯泡' not in who and reset_cd:
                 if not await self.throttle.do_associated():
                     return
+
+            if not os.path.exists(fur_path):
+                raise FurNotFoundException(f'没有找到{who_nick}的返图')
             
             author_folder_names = [
                 author_folder_name 
@@ -812,6 +812,10 @@ class Fur(Plugin):
                     return
                 except PartialFetchedException:
                     logger.warning('partial fetched...')
+                except FurNotFoundException as e:
+                    reason = f'返图未命中'
+                    await self.admin.inc_violation_cnt(reason=reason, hint=reason)
+                    return
         ...
 
     
