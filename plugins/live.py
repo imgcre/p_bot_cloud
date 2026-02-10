@@ -70,6 +70,7 @@ class LiveAchv(AchvEnum):
     )
     HUNDRED_HOURS = 6, '常驻人口', '在直播间观看100小时', AchvOpts(rarity=AchvRarity.LEGEND, custom_obtain_msg='和猫咪一起度过了漫长时光', display='🌌', locked=True, target_obtained_cnt=100, unit='小时', custom_progress_str=True)
     XIANGQI_WIN = 7, '绝杀', '在直播间一对一象棋对局中获胜', AchvOpts(rarity=AchvRarity.RARE, custom_obtain_msg='鲨猫了！', display='🔪')
+    LICKER = 8, '清洁工', '在直播间累计舔100次肉垫', AchvOpts(rarity=AchvRarity.EPIC, custom_obtain_msg='帮猫咪清理干净了', target_obtained_cnt=100, display='👅')
 
 async def get_uid_by_name(uname: str):
     return (await search.search_by_type(uname, search_type=search.SearchObjectType.USER))['result'][0]['mid']
@@ -920,6 +921,18 @@ class Live(Plugin, AchvCustomizer):
                 if member is None: continue
                 async with self.override(member):
                     await self.achv.submit(LiveAchv.XIANGQI_WIN)
+        if message.topic.matches('/live/event/lick_paw'):
+            j = json.loads(message.payload)
+            openid = j['openid']
+            found_item = next((item for item in self.user_binds.users.items() if item[1].check_open_id(openid)), None)
+            if found_item is None:
+                return
+            qq_id, _ = found_item
+            for group_id in self.known_groups:
+                member = await self.bot.get_group_member(group_id, qq_id)
+                if member is None: continue
+                async with self.override(member):
+                    await self.achv.submit(LiveAchv.LICKER)
         if message.topic.matches('/live/event/started'):
             j = json.loads(message.payload)
             changelog = j['changelog']
