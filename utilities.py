@@ -831,6 +831,10 @@ class VoucherRecordExtraAi():
     ...
 
 @dataclass
+class VoucherRecordExtraModBalance():
+    ...
+
+@dataclass
 class VoucherRecordExtraStock():
     code: str
     cnt: int

@@ -30,7 +30,7 @@ import math
 
 from typing import TYPE_CHECKING, Awaitable, Callable, ClassVar, Final, Optional, overload
 
-from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvExtra, AchvInfo, AchvOpts, AchvRarity, AdminType, GroupLocalStorage, RecallItem, Source, Upgraded, User, UserSpec, VoucherRecordChestNotifyTmpEnable, VoucherRecordExtraLiveAnswerExplanation, VoucherRecordExtraLiveCdkey, VoucherRecordExtraLiveGift, VoucherRecordExtraLiveGuard, breakdown_chain_sync, deserialize, get_delta_time_str, get_logger, handler, throttle_config, to_unbind
+from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvExtra, AchvInfo, AchvOpts, AchvRarity, AdminType, GroupLocalStorage, RecallItem, Source, Upgraded, User, UserSpec, VoucherRecordChestNotifyTmpEnable, VoucherRecordExtraLiveAnswerExplanation, VoucherRecordExtraLiveCdkey, VoucherRecordExtraLiveGift, VoucherRecordExtraLiveGuard, VoucherRecordExtraModBalance, breakdown_chain_sync, deserialize, get_delta_time_str, get_logger, handler, throttle_config, to_unbind
 
 if TYPE_CHECKING:
     from plugins.achv import Achv
@@ -310,6 +310,21 @@ class QueryModQuota(RPCFunc):
     class Response:
         remaining_free: int
         paid_balance: int
+
+@dataclass
+class ModRechargeBalance(RPCFunc):
+    openid: str
+    amount: int
+
+    @dataclass
+    class Response:
+        succeed: bool
+        reason: str
+        paid_balance: int
+
+        def __post_init__ (self):
+            if not self.succeed:
+                raise RuntimeError(self.reason)
 
 
 @dataclass
@@ -1057,6 +1072,9 @@ class Live(Plugin, AchvCustomizer):
     async def x(self, func: QueryModQuota) -> QueryModQuota.Response: ...
 
     @overload
+    async def x(self, func: ModRechargeBalance) -> ModRechargeBalance.Response: ...
+
+    @overload
     async def x(self, func: AddMusic) -> AddMusic.Response: ...
 
     @overload
@@ -1443,6 +1461,27 @@ class Live(Plugin, AchvCustomizer):
             tx.append(f'增值包: {resp.paid_balance}')
 
         return ', '.join(tx)
+
+    @top_instr('充值额度')
+    async def mod_recharge_balance_cmd(self, member: GroupMember, info: UserBindInfo):
+        if not self.is_living and member.id not in config.SUPER_ADMINS: return '当前未开播'
+        if not info.is_bound(): return BIND_HINT
+
+        await self.voucher.check_satisfied(cnt=Decimal('1'))
+
+        try:
+            resp = await self.x(ModRechargeBalance(
+                openid=info.get_openid(),
+                amount=1
+            ))
+            await self.voucher.adjust(
+                cnt=Decimal('-1'),
+                force=True,
+                extra=VoucherRecordExtraModBalance()
+            )
+            return f'充值成功, 增值包余额: {resp.paid_balance}'
+        except RuntimeError as e:
+            return ''.join(['充值失败: ', *e.args])
 
     @top_instr('点歌')
     async def add_music_cmd(self, member: GroupMember, info: UserBindInfo, *kw: str):
