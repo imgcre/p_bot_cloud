@@ -50,8 +50,14 @@ class UserStock():
                 total_quantity += item.quantity_delta
                 total_cost += item.price * item.quantity_delta
             elif item.quantity_delta < 0:
-                # 卖出时，假设按 FIFO 清仓（这里不调整成本）
-                total_quantity += item.quantity_delta  # 负数
+                # 卖出时，按比例减少总成本
+                if total_quantity > 0:
+                    total_cost = total_cost * Decimal(total_quantity + item.quantity_delta) / Decimal(total_quantity)
+                total_quantity += item.quantity_delta
+                
+                if total_quantity <= 0:
+                    total_quantity = 0
+                    total_cost = Decimal('0')
 
         if self.cnt == 0:
             return Decimal('0')
