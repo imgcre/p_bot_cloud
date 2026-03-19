@@ -962,7 +962,7 @@ class Live(Plugin, AchvCustomizer):
                     
                 texts.append('\n'.join([
                     "目前可以公开的情报:",
-                    '#额度: 查询本月剩余点歌额度',
+                    '#点歌额度: 查询本月剩余点歌额度',
                     '#踩我: 在直播间生成一只地鼠',
                     '#多久到我: 查询点歌的排队时长',
                     f'#宝箱提醒: 开启👉本次👈毛啵的宝箱生成提醒(消耗0.1{VOUCHER_UNIT}{VOUCHER_NAME})',
@@ -1428,7 +1428,7 @@ class Live(Plugin, AchvCustomizer):
     async def blush_effect_cmd(self):
         return await self.set_effect_cmd(effect_name='Blush')
     
-    @top_instr('额度')
+    @top_instr('点歌额度')
     async def mod_quota_cmd(self, member: GroupMember, info: UserBindInfo):
         if not self.is_living and member.id not in config.SUPER_ADMINS: return '当前未开播'
         if not info.is_bound(): return BIND_HINT
