@@ -978,6 +978,7 @@ class Live(Plugin, AchvCustomizer):
                 texts.append('\n'.join([
                     "目前可以公开的情报:",
                     '#点歌额度: 查询本月剩余点歌额度',
+                    f'#充值额度: 获得额外三次点歌额度(消耗1{VOUCHER_UNIT}{VOUCHER_NAME})',
                     '#踩我: 在直播间生成一只地鼠',
                     '#多久到我: 查询点歌的排队时长',
                     f'#宝箱提醒: 开启👉本次👈毛啵的宝箱生成提醒(消耗0.1{VOUCHER_UNIT}{VOUCHER_NAME})',
