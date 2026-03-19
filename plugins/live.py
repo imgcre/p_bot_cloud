@@ -303,6 +303,16 @@ class RPCOptions():
 RPCOptionsFactory = Callable[[], RPCOptions]
 
 @dataclass
+class QueryModQuota(RPCFunc):
+    openid: str
+
+    @dataclass
+    class Response:
+        remaining_free: int
+        paid_balance: int
+
+
+@dataclass
 class AddMusic(RPCFunc):
     query: str
     openid: str
@@ -952,6 +962,7 @@ class Live(Plugin, AchvCustomizer):
                     
                 texts.append('\n'.join([
                     "目前可以公开的情报:",
+                    '#额度: 查询本月剩余点歌额度',
                     '#踩我: 在直播间生成一只地鼠',
                     '#多久到我: 查询点歌的排队时长',
                     f'#宝箱提醒: 开启👉本次👈毛啵的宝箱生成提醒(消耗0.1{VOUCHER_UNIT}{VOUCHER_NAME})',
@@ -1041,6 +1052,9 @@ class Live(Plugin, AchvCustomizer):
             self.pendings.pop(req_id)
             self.backup_man.set_dirty()
             return pending
+
+    @overload
+    async def x(self, func: QueryModQuota) -> QueryModQuota.Response: ...
 
     @overload
     async def x(self, func: AddMusic) -> AddMusic.Response: ...
@@ -1414,6 +1428,22 @@ class Live(Plugin, AchvCustomizer):
     async def blush_effect_cmd(self):
         return await self.set_effect_cmd(effect_name='Blush')
     
+    @top_instr('额度')
+    async def mod_quota_cmd(self, member: GroupMember, info: UserBindInfo):
+        if not self.is_living and member.id not in config.SUPER_ADMINS: return '当前未开播'
+        if not info.is_bound(): return BIND_HINT
+
+        resp = await self.x(QueryModQuota(
+            openid=info.get_openid(),
+        ))
+
+        tx = [f'本月套餐: {resp.remaining_free}']
+
+        if resp.paid_balance > 0:
+            tx.append(f'增值包: {resp.paid_balance}')
+
+        return ', '.join(tx)
+
     @top_instr('点歌')
     async def add_music_cmd(self, member: GroupMember, info: UserBindInfo, *kw: str):
         if not self.is_living and member.id not in config.SUPER_ADMINS: return '当前未开播'
