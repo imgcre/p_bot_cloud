@@ -16,7 +16,7 @@ import random
 import random
 from itertools import groupby
 
-from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvInfo, AchvOpts, AchvRarity, AchvRarityVal, AdminType, Source, Upgraded, User, UserSpec, VoucherRecordKill, voucher_round_half_up
+from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvInfo, AchvOpts, AchvRarity, AchvRarityVal, AdminType, Source, Upgraded, User, UserSpec, VoucherRecordKill, VoucherRecordReward, voucher_round_half_up
 
 class VoucherAchv(AchvEnum):
     AFRICAN_CHIEFS = 0, '非酋', '连续100次抽奖都未成功', AchvOpts(rarity=AchvRarity.LEGEND, display='🧔🏿', custom_obtain_msg='成为了反方向的欧皇', target_obtained_cnt=100)
@@ -354,6 +354,14 @@ class Voucher(Plugin):
             member = await self.member_from(at=at)
             async with self.override(member):
                 await self.adjust(cnt=Decimal('-100'), force=True, extra=VoucherRecordKill())
+                return 'ok'
+            
+    @top_instr('！！！', InstrAttr.FORCE_BACKUP)
+    async def reward_cmd(self, at: At):
+        async with self.admin.privilege(type=AdminType.SUPER):
+            member = await self.member_from(at=at)
+            async with self.override(member):
+                await self.adjust(cnt=Decimal('200'), force=True, extra=VoucherRecordReward())
                 return 'ok'
 
     @top_instr('富豪榜', InstrAttr.NO_ALERT_CALLER)

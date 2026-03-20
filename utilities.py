@@ -884,3 +884,7 @@ class VoucherRecordChestNotifyTmpEnable():
 @dataclass
 class VoucherRecordKill():
     ...
+
+@dataclass
+class VoucherRecordReward():
+    ...
