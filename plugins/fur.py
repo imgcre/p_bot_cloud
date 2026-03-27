@@ -293,15 +293,15 @@ class Fur(Plugin):
     async def xuelang_at(self, event: MessageEvent):
         xue_cnt = 0
 
-        used_achv: Enum = await self.achv.get_used()
-        if used_achv is not None:
-            if used_achv is FurAchv.ESCAPE:
-                return
+        # used_achv: Enum = await self.achv.get_used()
+        # if used_achv is not None:
+        #     if used_achv is FurAchv.ESCAPE:
+        #         return
             
-            info: AchvInfo = used_achv.value
-            rarity_val: AchvRarityVal = info.opts.rarity.value
-            if rarity_val.level >= AchvRarity.LEGEND.value.level and not info.opts.is_punish:
-                return
+        #     info: AchvInfo = used_achv.value
+        #     rarity_val: AchvRarityVal = info.opts.rarity.value
+        #     if rarity_val.level >= AchvRarity.LEGEND.value.level and not info.opts.is_punish:
+        #         return
 
         async def is_boom_id(id: int):
             if id == 254081521:
