@@ -304,25 +304,35 @@ class Fur(Plugin):
                 return
 
         async def is_boom_id(id: int):
-            # if id == 254081521:
-            #     return True
+            if id == 254081521:
+                return True
             member = await self.member_from(member_id=id)
             async with self.override(member):
                 if await self.achv.is_used(FurAchv.BOOM):
                     return True
             return False
 
+        target_ids = set()
+
         for c in event.message_chain:
             if isinstance(c, At) and await is_boom_id(c.target):
                 xue_cnt += 1
+                target_ids.add(c.target)
             if isinstance(c, Quote) and await is_boom_id(c.sender_id):
                 xue_cnt += 1
+                target_ids.add(c.sender_id)
 
         logger.debug(f'{xue_cnt=}')
 
         if xue_cnt > 0:
+            last = None
+
             await self.achv.submit(FurAchv.BOOM)
-            return await self.deliver_light_bulb(factor=xue_cnt)
+            for target_id in target_ids:
+                target: GroupMember = await self.member_from(member_id=target_id)
+                async with self.override(target):
+                    last = await self.deliver_light_bulb(factor=xue_cnt)
+            return last
 
     @unmute_instr(InstrAttr.FORCE_BACKUP)
     async def clear_mute_state(self, man: MuteMan):
