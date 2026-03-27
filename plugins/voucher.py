@@ -348,22 +348,6 @@ class Voucher(Plugin):
             ...
         ...
 
-    @top_instr('。。。', InstrAttr.FORCE_BACKUP)
-    async def kill_cmd(self, at: At):
-        async with self.admin.privilege(type=AdminType.SUPER):
-            member = await self.member_from(at=at)
-            async with self.override(member):
-                await self.adjust(cnt=Decimal('-100'), force=True, extra=VoucherRecordKill())
-                return 'ok'
-            
-    @top_instr('！！！', InstrAttr.FORCE_BACKUP)
-    async def reward_cmd(self, at: At):
-        async with self.admin.privilege(type=AdminType.SUPER):
-            member = await self.member_from(at=at)
-            async with self.override(member):
-                await self.adjust(cnt=Decimal('200'), force=True, extra=VoucherRecordReward())
-                return 'ok'
-
     @top_instr('富豪榜', InstrAttr.NO_ALERT_CALLER)
     async def get_rich_list_cmd(self, group: Group):
         members = (await self.bot.member_list(group.id)).data

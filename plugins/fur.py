@@ -49,7 +49,7 @@ class FurAchv(AchvEnum):
     BLACK = 2, '有效返图', '抽到了星效的画面几乎纯黑色的返图', AchvOpts(rarity=AchvRarity.RARE, custom_obtain_msg='这张图里有一只穿云月, 你发现了吗？')
     SUN = 3, '神说，要有光', '使用指令【#来只灯泡】抽到了会导致更长时间禁言的图片(此时图片中的内容一般是太阳)', AchvOpts(rarity=AchvRarity.LEGEND, custom_obtain_msg='感觉自己很烧', display='☀️')
     ESCAPE = 4, '逃过一劫', '使用指令【#来只灯泡】抽到了LED灯的图片, 此时将不会对抽到此图片的群成员进行禁言操作', AchvOpts(rarity=AchvRarity.RARE, custom_obtain_msg='表示：就这？', display='🍀')
-    BOOM = 5, '繁荣', '回复了雪狼的消息而导致禁言', AchvOpts(rarity=AchvRarity.COMMOM, custom_obtain_msg='踩到了炸弹💣', display='💣')
+    BOOM = 5, '繁荣', '？', AchvOpts(rarity=AchvRarity.COMMOM, custom_obtain_msg='踩到了炸弹💣', display='💣')
     BRIGHTLY_LIT = 6, '灯火通明', '累积被禁言1000次', AchvOpts(rarity=AchvRarity.EPIC, custom_obtain_msg='来到了照明商店', target_obtained_cnt=1000, unit='只灯泡', display='💡')
     HALF_FULL = 7, '半步轮回境', '单次禁言时长超过30分钟', AchvOpts(rarity=AchvRarity.RARE, custom_obtain_msg='夺造化，转涅盘，握生死，掌轮回。', display='🎭')
     SUPERSATURATED_SOLUTION = 8, '过饱和溶液', '单次禁言时长超过60分钟', AchvOpts(rarity=AchvRarity.EPIC, custom_obtain_msg='即将析出晶体', display='⚗️')
@@ -304,8 +304,8 @@ class Fur(Plugin):
                 return
 
         async def is_boom_id(id: int):
-            if id == 254081521:
-                return True
+            # if id == 254081521:
+            #     return True
             member = await self.member_from(member_id=id)
             async with self.override(member):
                 if await self.achv.is_used(FurAchv.BOOM):
