@@ -205,6 +205,19 @@ class Voucher(Plugin):
             else:
                 await self.achv.submit(VoucherAchv.AFRICAN_CHIEFS)
 
+    @delegate()
+    async def get_draw_prob(self, e: AchvEnum, man: UserVoucherMan):
+        ac_info = typing.cast(AchvInfo, e.value)
+        rarity = ac_info.opts.rarity
+        if rarity not in self.PROBS:
+            return 0
+        
+        prob = self.PROBS[rarity]
+        if ac_info.opts.is_punish:
+            prob *= self.MAG_PUNISHMENT
+        prob *= man.factor
+        return prob
+
     # 输出文本, 退出持续模式
     @delegate(InstrAttr.FORCE_BACKUP)
     async def draw(self, aka: str, man: UserVoucherMan, source: Source):

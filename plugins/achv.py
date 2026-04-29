@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from plugins.throttle import Throttle
     from plugins.events import Events
     from plugins.nap_cat import NapCat
+    from plugins.voucher import Voucher
 
 logger = get_logger()
 
@@ -58,6 +59,7 @@ class Achv(Plugin, InjectNotifier):
     throttle: Inject['Throttle']
     events: Inject['Events']
     nap_cat: Inject['NapCat']
+    voucher: Inject['Voucher']
 
     def __init__(self):
         self.registed_achv: Dict[Plugin, EnumMeta] = {}
@@ -529,11 +531,13 @@ class Achv(Plugin, InjectNotifier):
                 return f'尚未开始成就"{real_aka}"的获取进度'
             
             if man.has_static(e):
-                return f'已获得成就"{real_aka}"'
+                prob = await self.voucher.get_draw_prob(achv)
+                ext_str = f'，使用指令【#抽奖 {real_aka}】可用本成就抽取猫条(概率{prob * 100:.1f}%)' if await self.is_deletable(achv) and info.opts.rarity.value.level >= AchvRarity.UNCOMMON.value.level else ''
+                return f'已获得成就"{real_aka}"{ext_str}'
 
             p = next((k for k, v in self.registed_achv.items() if v is e.__class__))
             if isinstance(p, AchvCustomizer):
-                info: AchvInfo = e.value
+                # info: AchvInfo = e.value
                 if info.opts.custom_progress_str:
                     return f'{info}({info.condition}): {await p.get_progress_str(e, man.achvs[e])}'
 
