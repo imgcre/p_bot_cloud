@@ -467,7 +467,9 @@ class Achv(Plugin, InjectNotifier):
             })
 
     @top_instr('说明')
-    async def achv_desc(self, aka: str):
+    async def achv_desc(self, aka: Optional[str]):
+        if aka is None:
+            return '常见成就：\n连五鞭：连续【#签到】五天可获得此成就，使用【#抽奖 连五鞭】可以使用该成就抽取猫条，之后"连五鞭"将变为"连四鞭"状态，在抽奖后的第二天继续【#签到】可以再次获得"连五鞭"成就'
         for meta in self.registed_achv.values():
             info: Optional[AchvInfo] = next((val for e in meta if (val := typing.cast(AchvInfo, e.value)).aka == aka), None)
             if info is not None:
