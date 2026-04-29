@@ -1,20 +1,38 @@
 from typing import Optional
-from plugin import Plugin, route, top_instr
-from utilities import AchvInfo
+import typing
+from plugin import Plugin, route, top_instr, Inject
+from utilities import AchvEnum, AchvInfo
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from plugins.achv import Achv
 
 @route('帮助系统')
 class Help(Plugin):
+    achv: Inject['Achv']
     
     @top_instr('notfound')
     async def notfound(self, cmd_name: str):
+        achv: AchvEnum = await self.achv.dynamic_aka_to_achv(cmd_name)
+        if achv is not None:
+            val = typing.cast(AchvInfo, achv.value)
+
+            tx = [f'{val.aka}: {val.condition}']
+
+            if val.aka != cmd_name:
+                tx.append(f'*{cmd_name}是{val.aka}在当前状态下的动态名称')
+
+            return '\n'.join(tx)
+
         return f'指令"{cmd_name}"不存在'
 
     @top_instr('帮助')
     async def help(self, sub_cmd: Optional[str]):
 
         tx = [
-            '猫德：违规计数，猫德为正是健康状态。使用指令【#猫德】可查询猫德\n',
-            '猫条：猫咪积分，猫条可用来兑换物料（使用指令【#所有物料】可查询当前可兑换的物料）、兑换额外的点歌次数、参与猜拳和股票等游戏。使用指令【#猫条】来查询猫条及其获取方式'
+            '好的，以下是本群的常见概念：\n',
+            '猫德：违规计数，猫德 ≥ 0 是健康状态。使用指令【#猫德】可查询猫德\n',
+            '猫条：猫咪积分，使用指令【#猫条】来查询猫条数量及其获取方式。猫条可用来兑换物料（使用指令【#所有物料】可查询当前可兑换的物料）、兑换额外的点歌次数、参与猜拳和股票等游戏。'
         ]
 
         return tx

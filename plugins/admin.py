@@ -294,6 +294,8 @@ class Admin(Plugin, AchvCustomizer):
             pic_res = await fur.deliver_light_bulb(factor=10)
             if pic_res is not None:
                 res.extend(pic_res)
+        else:
+            res.append('您好！欢迎来到猫咪通讯站。\n每天有开播的话都会在这里 @全体成员。\n\n使用指令【#帮助】了解更多')
 
         if  not await self.achv.has(AdminAchv.READY_FOR_PURGE):
             if info.qq_level < 16:

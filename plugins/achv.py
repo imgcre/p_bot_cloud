@@ -426,6 +426,21 @@ class Achv(Plugin, InjectNotifier):
     async def get_achv_extra(self, e: AchvEnum, man: Optional[CollectedAchvMan]):
         if man is not None and e in man.achvs:
             return man.achvs[e]
+        
+    @delegate()
+    async def dynamic_aka_to_achv(self, aka: str):
+        for meta in self.registed_achv.values():
+            e = next((e for e in meta if typing.cast(AchvInfo, e.value).aka == aka), None)
+            if e is not None:
+                return e
+
+            
+        # for achv_enum, extra in man.achvs.items():
+        for achv_enum in await self.get_processing():
+            name = await self.get_achv_name(achv_enum)
+            if name == aka:
+                return achv_enum
+
 
     @top_instr('成就')
     @throttle_config(name='成就', max_cooldown_duration=1*60*60)
