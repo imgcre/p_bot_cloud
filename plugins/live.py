@@ -1216,6 +1216,15 @@ class Live(Plugin, AchvCustomizer):
             if info.is_bound(): return [At(target=member.id), ' 已完成绑定, 无需重复操作']
             # if not self.is_living and member.id not in config.SUPER_ADMINS: return '当前未开播'
 
+            tx = ['绑定账号后可解锁直播间图片发送、进入直播间自动签到、开启宝箱、敲木鱼增加猫德、直播结束时使用CDKEY额外兑换猫条等互动功能\n\n在开播时将您的QQ号发送到直播间的弹幕中完成账号绑定\n']
+
+            if self.is_living:
+                tx.append('✅当前已开播，可以绑定')
+            else:
+                tx.append('🚫当前未开播，不可绑定')
+
+            return tx
+
             confirm_code = info.start_bind(from_group_id=member.group.id)
             # await self.nap_cat.send_msg(text='请在直播间发送弹幕(不要忘记后面的六位英文字母也要包括在弹幕中):')
             # await asyncio.sleep(1)

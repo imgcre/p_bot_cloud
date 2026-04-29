@@ -348,8 +348,21 @@ class Admin(Plugin, AchvCustomizer):
         return f'当前猫德: {morality}'
 
     @top_instr('猫德')
-    async def show_morality_cmd(self):
-        return await self.get_morality()
+    async def show_morality_cmd(self, man: ViolationMan):
+        morality = -man.count
+
+        tx = []
+
+        if morality <= 0:
+            tx.append('每次违规都会扣除1猫德，猫德过低会受到系统处罚。猫德大于255会获得一个传说级成就【晨钟暮鼓】')
+            ...
+        
+        if self.live.is_living:
+            tx.append('正在直播中，连续点击直播间画面中间每100次可增加1猫德，每场直播最多可增加4猫德左右（b站限制了每位观众的最高点赞量）\n\n')
+
+        tx.append(await self.get_morality())
+
+        return tx
 
     @top_instr('驱逐投票')
     async def expulsion_vote(self, at: At):

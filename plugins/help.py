@@ -11,6 +11,15 @@ class Help(Plugin):
 
     @top_instr('帮助')
     async def help(self, sub_cmd: Optional[str]):
+
+        tx = [
+            '猫德：违规计数，猫德为正是健康状态。使用指令【#猫德】可查询猫德\n',
+            '猫条：猫咪积分，猫条可用来兑换物料（使用指令【#所有物料】可查询当前可兑换的物料）、兑换额外的点歌次数、参与猜拳和股票等游戏。使用指令【#猫条】来查询猫条及其获取方式'
+        ]
+
+        return tx
+
+
         from plugins.admin import AdminAchv
         admin_info: AchvInfo = AdminAchv.ADMIN.value
         

@@ -432,7 +432,7 @@ class Voucher(Plugin):
         tx = [f'你当前共持有{cnt}{VOUCHER_UNIT}{VOUCHER_NAME}']
 
         if cnt < 1:
-            tx.append(f'\n\n小贴士：可以通过以下方式获取{VOUCHER_NAME}\n获取成就并使用【#抽奖 <成就名>】指令进行抽奖，成就的稀有度会影响抽得{VOUCHER_NAME}的概率，使用指令【#说明】以了解更多\n在毛播间观看直播时，若您的头像气泡上方出现宝箱气泡，投喂"小花花"有机会获得0.1到10{VOUCHER_UNIT}{VOUCHER_NAME}')
+            tx.append(f'\n\n小贴士：可以通过以下方式获取{VOUCHER_NAME}\n✒️获取成就并使用【#抽奖 <成就名>】指令进行抽奖，成就的稀有度会影响抽得{VOUCHER_NAME}的概率，使用指令【#说明】以了解更多\n✒️在毛播间观看直播时，若您的头像气泡上方出现宝箱气泡，投喂"小花花"有机会获得0.1到10{VOUCHER_UNIT}{VOUCHER_NAME}（需要先完成绑定账号的前置，使用指令【#绑定账号】了解更多）')
 
         return tx
     
