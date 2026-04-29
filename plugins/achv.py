@@ -485,55 +485,63 @@ class Achv(Plugin, InjectNotifier):
     async def achv_desc(self, aka: Optional[str]):
         if aka is None:
             return '常见成就：\n连五鞭：连续【#签到】五天可获得此成就，使用【#抽奖 连五鞭】可以使用该成就抽取猫条，之后"连五鞭"将变为"连四鞭"状态，在抽奖后的第二天继续【#签到】可以再次获得"连五鞭"成就'
-        for meta in self.registed_achv.values():
-            info: Optional[AchvInfo] = next((val for e in meta if (val := typing.cast(AchvInfo, e.value)).aka == aka), None)
-            if info is not None:
-                break
-        else:
+        
+        achv = await self.dynamic_aka_to_achv(aka)
+
+        if achv is None:
             return f'不存在名叫"{aka}"的成就'
         
-        return f'\n{info}\n{info.condition}'
+        val = typing.cast(AchvInfo, achv.value)
+
+        tx = [f'{val.aka}: {val.condition}']
+
+        if val.aka != aka:
+            tx.append(f'*{aka}是{val.aka}在当前状态下的动态名称')
+
+        return '\n'.join(tx)
     
     @top_instr('进度')
     async def achv_progress(self, aka: str, man: Optional[CollectedAchvMan]):
         await self.admin.check_proxy(disable_required=True)
-        for meta in self.registed_achv.values():
-            if next((val for e in meta if (val := typing.cast(AchvInfo, e.value)).aka == aka), None) is not None:
-                break
-        else:
+
+        achv = await self.dynamic_aka_to_achv(aka)
+
+        if achv is None:
             return f'不存在名叫"{aka}"的成就'
         
-        if man is None or len(man.achvs) == 0:
-            return f'尚未开始成就"{aka}"的获取进度'
-        
-        e = next((k for k in man.achvs.keys() if aka == typing.cast(AchvInfo, k.value).aka), None)
-        if e is None:
-            return f'尚未开始成就"{aka}"的获取进度'
-        
-        if man.has_static(e):
-            return f'已获得成就"{aka}"'
-        
-        info = typing.cast(AchvInfo, e.value)
+        real_aka = typing.cast(AchvInfo, achv.value).aka
 
-        # p: AchvCustomizer = next((k for k, v in self.registed_achv.items() if v is e.__class__))
-        # if isinstance(p, AchvCustomizer):
-        #     info: AchvInfo = e.value
-        #     if info.opts.dynamic_process:
-        #         return await p.get_process(e)
+        info = typing.cast(AchvInfo, achv.value)
 
-        p = next((k for k, v in self.registed_achv.items() if v is e.__class__))
-        if isinstance(p, AchvCustomizer):
-            info: AchvInfo = e.value
-            if info.opts.custom_progress_str:
-                return f'{info}({info.condition}): {await p.get_progress_str(e, man.achvs[e])}'
+        # for meta in self.registed_achv.values():
+        #     if next((val for e in meta if (val := typing.cast(AchvInfo, e.value)).aka == aka), None) is not None:
+        #         break
+        # else:
+        #     return f'不存在名叫"{aka}"的成就'
         
-        # return extra.obtained_cnt
-    
-        obtained_cnt = man.achvs[e].obtained_cnt
 
-        # obtained_cnt = await self.get_achv_collected_count(e)
+        async def get_p_text():
+            if man is None or len(man.achvs) == 0:
+                return f'尚未开始成就"{real_aka}"的获取进度'
+        
+            e = next((k for k in man.achvs.keys() if real_aka == typing.cast(AchvInfo, k.value).aka), None)
+            if e is None:
+                return f'尚未开始成就"{real_aka}"的获取进度'
+            
+            if man.has_static(e):
+                return f'已获得成就"{real_aka}"'
 
-        return f'\n{info}\n{info.condition}\n\n{obtained_cnt}/{info.opts.formatted_target_obtained_cnt}{info.opts.unit}'
+            p = next((k for k, v in self.registed_achv.items() if v is e.__class__))
+            if isinstance(p, AchvCustomizer):
+                info: AchvInfo = e.value
+                if info.opts.custom_progress_str:
+                    return f'{info}({info.condition}): {await p.get_progress_str(e, man.achvs[e])}'
+
+            obtained_cnt = man.achvs[e].obtained_cnt
+            return f'{obtained_cnt}/{info.opts.formatted_target_obtained_cnt}{info.opts.unit}'
+
+        aka_ext = f'\n*{aka}是{real_aka}在当前状态下的动态名称' if real_aka != aka else ''
+        return f'\n{info}\n{info.condition}\n\n{await get_p_text()}{aka_ext}'
 
 
     @top_instr('佩戴')

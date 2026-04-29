@@ -1,6 +1,6 @@
 from typing import Optional
 import typing
-from plugin import Plugin, route, top_instr, Inject
+from plugin import MessageContext, Plugin, route, top_instr, Inject
 from utilities import AchvEnum, AchvInfo
 from typing import TYPE_CHECKING
 
@@ -12,17 +12,11 @@ class Help(Plugin):
     achv: Inject['Achv']
     
     @top_instr('notfound')
-    async def notfound(self, cmd_name: str):
+    async def notfound(self, cmd_name: str, ctx: MessageContext):
         achv: AchvEnum = await self.achv.dynamic_aka_to_achv(cmd_name)
         if achv is not None:
-            val = typing.cast(AchvInfo, achv.value)
-
-            tx = [f'{val.aka}: {val.condition}']
-
-            if val.aka != cmd_name:
-                tx.append(f'*{cmd_name}是{val.aka}在当前状态下的动态名称')
-
-            return '\n'.join(tx)
+            await ctx.exec_cmd(['进度', cmd_name])
+            return
 
         return f'指令"{cmd_name}"不存在'
 
