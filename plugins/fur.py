@@ -20,7 +20,6 @@ from PIL import Image, ExifTags, TiffImagePlugin
 from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvExtra, AchvInfo, AchvOpts, AchvRarity, AchvRarityVal, GroupLocalStorage, GroupLocalStorageAsEvent, GroupMemberOp, GroupSpec, Source, VoucherRecordExtraClearMute, get_delta_time_str, get_logger, handler, throttle_config
 import uuid
 import aiohttp
-import base64
 import imghdr
 import json
 import itertools
@@ -99,7 +98,7 @@ class MuteMan():
         self.last_mute_ts = time.time()
         self.last_mute_duration = duration
         return self.depth
-    
+
 @dataclass
 class FurPicMsgRecord():
     msg_id: int
@@ -137,6 +136,9 @@ class Fur(Plugin):
 
     FETCH_AUTHOR_HISTORY_SIZE: Final = 10
     FETCH_IMG_PATH_HISTORY_SIZE: Final = 50
+    RENDER_IMAGE_MAX_DIMENSION: Final = 960
+    SEND_IMAGE_MAX_DIMENSION: Final = 1600
+    SEND_IMAGE_MAX_BYTES: Final = 4 * 1024 * 1024
 
     fetch_author_history: Dict[str, List[str]] = {} # 目录的名字
     fetch_img_path_history: List[str] = []
@@ -144,6 +146,58 @@ class Fur(Plugin):
     def __init__(self) -> None:
         random.seed()
         self.last_run_time = time.time()
+
+    def _thumbnail_resample(self):
+        return getattr(
+            getattr(Image, 'Resampling', Image),
+            'LANCZOS',
+            getattr(Image, 'ANTIALIAS', Image.BICUBIC),
+        )
+
+    def _save_limited_jpeg(self, source_path: str, *, max_dimension: int, quality: int=85):
+        target_image_file_name = f'{uuid.uuid4()}.jpg'
+        target_image_file_path = self.path.data.cache.of_file(target_image_file_name)
+        with Image.open(source_path) as img:
+            img.load()
+            if max(img.size) > max_dimension:
+                img.thumbnail((max_dimension, max_dimension), self._thumbnail_resample())
+            img.convert('RGB').save(target_image_file_path, 'JPEG', quality=quality, optimize=True)
+        return target_image_file_path
+
+    def _remove_generated_cache_file(self, file_path: str):
+        cache_path = os.path.abspath(self.path.data.cache)
+        file_path = os.path.abspath(file_path)
+        if os.path.commonpath([cache_path, file_path]) != cache_path:
+            return
+        try:
+            os.remove(file_path)
+        except OSError:
+            ...
+
+    def _prepare_send_image(self, source_path: str):
+        what = imghdr.what(source_path)
+        if what == 'gif':
+            return source_path
+        file_size = os.path.getsize(source_path)
+        with Image.open(source_path) as img:
+            width, height = img.size
+        if max(width, height) <= self.SEND_IMAGE_MAX_DIMENSION and file_size <= self.SEND_IMAGE_MAX_BYTES:
+            return source_path
+        return self._save_limited_jpeg(
+            source_path,
+            max_dimension=self.SEND_IMAGE_MAX_DIMENSION,
+            quality=85,
+        )
+
+    def _prepare_render_image(self, source_path: str):
+        what = imghdr.what(source_path)
+        if what == 'gif':
+            return source_path
+        return self._save_limited_jpeg(
+            source_path,
+            max_dimension=self.RENDER_IMAGE_MAX_DIMENSION,
+            quality=82,
+        )
 
     @autorun
     async def auto_recall_fur_pic(self, ctx: Context):
@@ -236,15 +290,17 @@ class Fur(Plugin):
     @top_instr('来测试', InstrAttr.NO_ALERT_CALLER)
     async def get_test(self):
         path = r'D:\projects\python\p_bot\plugins\fur\纳延\HT-364784069\Cache_1027207359e17904..jpg'
-        with open(path, "rb") as image_file:
-            b64_input = base64.b64encode(image_file.read()).decode('utf-8')
-        what = imghdr.what(path)
-        b64_url = f'data:image/{what};base64,{b64_input}'
+        render_image_path = self._prepare_render_image(path)
+        img_url = self.renderer.local_file_url(render_image_path)
 
-        b64_img = await self.renderer.render('pic_details', data={
-            'img_url': b64_url,
-
-        })
+        try:
+            b64_img = await self.renderer.render('pic_details', data={
+                'img_url': img_url,
+            }, local_files={
+                img_url: render_image_path,
+            })
+        finally:
+            self._remove_generated_cache_file(render_image_path)
         return [
             mirai.models.message.Image(base64=b64_img)
         ]
@@ -283,7 +339,7 @@ class Fur(Plugin):
     @top_instr('((来|吃).*?(只|点|份|条|头|个|碗|吨|块|把|双|群|匹|位|名|根|颗|朵|片|张|本|支|段|架|套|滴|幅|座|盘|所|斤|串|台|壶|瓶|杯|团|毫?升|量|艘|枚|阵|发)|看看)(?P<expr>.*?)', InstrAttr.NO_ALERT_CALLER, InstrAttr.FORCE_BACKUP)
     async def fur(self, expr: PathArg[str], author: Optional[At]):
         return await self.get_pic(expr, author)
-            
+
     @delegate()
     async def deliver_light_bulb(self, **kwargs):
         return await self.get_pic('💡', reset_cd=False, **kwargs)
@@ -297,7 +353,7 @@ class Fur(Plugin):
         # if used_achv is not None:
         #     if used_achv is FurAchv.ESCAPE:
         #         return
-            
+
         #     info: AchvInfo = used_achv.value
         #     rarity_val: AchvRarityVal = info.opts.rarity.value
         #     if rarity_val.level >= AchvRarity.LEGEND.value.level and not info.opts.is_punish:
@@ -337,8 +393,8 @@ class Fur(Plugin):
     @unmute_instr(InstrAttr.FORCE_BACKUP)
     async def clear_mute_state(self, man: MuteMan):
         await self.voucher.adjust(
-            cnt=Decimal('-1'), 
-            force=True, 
+            cnt=Decimal('-1'),
+            force=True,
             extra=VoucherRecordExtraClearMute(exchange_duration=man.get_remains_duration())
         )
         man.clear()
@@ -350,7 +406,7 @@ class Fur(Plugin):
         await self.admin.check_proxy(disable_required=True)
         author = None
         glse_gls_mute_man = typing.cast(GroupLocalStorageAsEvent[MuteMan], glse_gls_mute_man_)
-        
+
         with open(self.path.data.of_file('nickname_mappings.json'), encoding='utf-8') as f:
             j = json.load(f)
 
@@ -370,10 +426,10 @@ class Fur(Plugin):
                     li.append(replacer)
                 s = ''.join(li)
             return s
-        
+
         def get_role_weight(role_name, *, def_weight=1):
             obj = j['roles'][role_name]
-            
+
             if isinstance(obj, dict):
                 return obj['weight'] if 'weight' in obj else def_weight
             if isinstance(obj, list):
@@ -394,14 +450,14 @@ class Fur(Plugin):
                 if new_val < depth:
                     depth = new_val
 
-            
+
             mixins = []
 
             def wrap_to_list(v):
                 if isinstance(v, list):
                     return v
                 return [v]
-            
+
             def regexes_from_def_arr(def_arr):
                 result = []
                 if isinstance(def_arr, list):
@@ -413,7 +469,7 @@ class Fur(Plugin):
                     if 'regex' in def_arr:
                         result = wrap_to_list(def_arr['regex'])
                 return result
-            
+
             def keywords_from_def_arr(def_arr):
                 result = []
                 if isinstance(def_arr, list):
@@ -429,7 +485,7 @@ class Fur(Plugin):
 
             if isinstance(arr, list):
                 mixins = list(itertools.chain.from_iterable([wrap_to_list(obj['mixin']) for obj in arr if isinstance(obj, dict) and 'mixin' in obj]))
-                
+
             if isinstance(arr, dict):
                 if 'mixin' in arr:
                     mixins = wrap_to_list(arr['mixin'])
@@ -454,7 +510,7 @@ class Fur(Plugin):
                 if re.fullmatch(render_template(regexes, base_fac=base_fac), name):
                     update_depth(curr_depth + 0.5)
             return depth
-            
+
         role_weights = {k: get_role_weight(k) for k in j['roles'].keys()}
 
         def map_nickname_buf(name):
@@ -472,7 +528,7 @@ class Fur(Plugin):
                     hits[match_result].update([(role_key, role_weights[role_key]) for role_key in role_keys if role_key.startswith(f'{k}.')])
             if len(hits) == 0:
                 return name
-            
+
             logger.debug(f'{hits=}')
 
             for item in sorted(hits.items()):
@@ -512,7 +568,7 @@ class Fur(Plugin):
             mapped_name = random.choices([pnp[0] for pnp in pnps if pnp[0]], [pnp[1] for pnp in pnps if pnp[0]])[0]
             fur_remains[fur] = [i for i in fur_remains[fur] if i[0] != mapped_name]
             return mapped_name
-        
+
         for fur in raw_furs:
             fur_remains[fur] = map_nickname_buf(fur)
 
@@ -557,7 +613,7 @@ class Fur(Plugin):
                 async def do_mute(time_s: int):
                     original_time_s = time_s
 
-                    if mute_targets is not None: 
+                    if mute_targets is not None:
                         mans = [(self.gls_mute_man.get_or_create_data(group.id, mute_target), mute_target) for mute_target in mute_targets]
                     else:
                         mans = [(glse_gls_mute_man.get_or_create_data(), glse_gls_mute_man.member_id)]
@@ -578,7 +634,7 @@ class Fur(Plugin):
                                 if mute_targets is not None:
                                     time_s //= len(mute_targets)
                                     time_s = max(60, time_s)
-                                
+
                                 remains_duration = man.get_remains_duration()
                                 remains_durations.append(remains_duration)
                                 total = remains_duration * 4 + time_s
@@ -598,7 +654,7 @@ class Fur(Plugin):
                                     await self.achv.submit(FurAchv.FORBIDDEN_QUINTET)
                             except: ...
                     return all([rd > 0 for rd in remains_durations])
-                    
+
                 skip_img = False
 
                 if who == '灯泡':
@@ -611,7 +667,7 @@ class Fur(Plugin):
 
                 if who == '灯泡.escape':
                     await self.achv.submit(FurAchv.ESCAPE)
-                
+
                 if who == '灯泡.sun':
                     skip_img = await do_mute(100 * 60)
                     await self.achv.submit(FurAchv.SUN)
@@ -629,10 +685,10 @@ class Fur(Plugin):
 
             if not os.path.exists(fur_path):
                 raise FurNotFoundException(f'没有找到{who_nick}的返图')
-            
+
             author_folder_names = [
-                author_folder_name 
-                for author_folder_name 
+                author_folder_name
+                for author_folder_name
                 in os.listdir(fur_path)
                 if os.path.isdir(os.path.join(fur_path, author_folder_name))
             ]
@@ -662,7 +718,7 @@ class Fur(Plugin):
                     else:
                         if who not in self.fetch_author_history:
                             self.fetch_author_history[who] = []
-                        
+
                         if not skip_author_history_cond:
                             fetch_author_history_fur_sepc = self.fetch_author_history[who]
                         else:
@@ -692,8 +748,8 @@ class Fur(Plugin):
                     logger.debug(f'{author_folder_path=}')
                     try:
                         refer_image_file_path = random.choice([
-                            path 
-                            for name in os.listdir(author_folder_path) 
+                            path
+                            for name in os.listdir(author_folder_path)
                             if (path := os.path.join(author_folder_path, name)) not in lo_fetch_img_path_history
                         ])
                     except IndexError:
@@ -740,37 +796,23 @@ class Fur(Plugin):
                     skip_img = await post_process()
                     if skip_img: return
                     return [txt_file.read()]
-                
-            target_image_file_path = refer_image_file_path
 
-            refer_img = Image.open(refer_image_file_path)
-            width, height = refer_img.size
-
-            # 2160
-            if width > 1080 or height > 1080:
-                refer_img.thumbnail((1080,1080), Image.ANTIALIAS)
-                target_image_file_name = str(uuid.uuid4())
-                target_image_file_path = self.path.data.cache.of_file(target_image_file_name)
-                # 95
-                refer_img.convert('RGB').save(target_image_file_path, 'JPEG', quality=85)
+            target_image_file_path = self._prepare_send_image(refer_image_file_path)
 
             logger.debug(f'{refer_image_file_path=}')
 
-            with open(target_image_file_path, "rb") as image_file:
-                b64_input = base64.b64encode(image_file.read()).decode('utf-8')
-
             what = imghdr.what(target_image_file_path)
-            
+
             if what == 'gif':
-                b64_img = b64_input
+                image_msg = mirai.models.message.Image(path=target_image_file_path)
             else:
                 exif = {}
-                if refer_img._getexif() is not None:
-                    exif = { ExifTags.TAGS[k]: v for k, v in refer_img._getexif().items() if k in ExifTags.TAGS }
+                with Image.open(refer_image_file_path) as refer_img:
+                    raw_exif = refer_img._getexif()
+                if raw_exif is not None:
+                    exif = { ExifTags.TAGS[k]: v for k, v in raw_exif.items() if k in ExifTags.TAGS }
 
                 logger.debug(exif)
-
-                b64_url = f'data:image/{what};base64,{b64_input}'
 
                 key_renames = {
                     'Make': 'make',
@@ -784,23 +826,31 @@ class Fur(Plugin):
 
                 logger.debug({key_renames[key]: exif[key] for key in exif if key in key_renames})
 
-                b64_img = await self.renderer.render('pic_details', data={
-                    'img_url': b64_url,
-                    'author': author_name,
-                    'exif': {key_renames[key]: float(exif[key]) if isinstance(exif[key], TiffImagePlugin.IFDRational) else exif[key] for key in exif if key in key_renames}
-                })
+                render_image_file_path = self._prepare_render_image(target_image_file_path)
+                img_url = self.renderer.local_file_url(render_image_file_path)
+                try:
+                    b64_img = await self.renderer.render('pic_details', data={
+                        'img_url': img_url,
+                        'author': author_name,
+                        'exif': {key_renames[key]: float(exif[key]) if isinstance(exif[key], TiffImagePlugin.IFDRational) else exif[key] for key in exif if key in key_renames}
+                    }, local_files={
+                        img_url: render_image_file_path,
+                    })
+                finally:
+                    self._remove_generated_cache_file(render_image_file_path)
+                image_msg = mirai.models.message.Image(base64=b64_img)
 
             skip_img = await post_process()
-            if skip_img: 
+            if skip_img:
                 if isinstance(skip_img, str):
                     return [
                         mirai.models.message.Image(path=skip_img)
                     ]
                 return
             return [
-                mirai.models.message.Image(base64=b64_img)
+                image_msg
             ]
-        
+
         async def send_image():
             c = await generate_image()
             if c is not None:
@@ -808,13 +858,13 @@ class Fur(Plugin):
                 fur_pic_msg_man.records.append(
                     FurPicMsgRecord(msg_id=resp.message_id, source_id=source.get_target_id())
                 )
-        
+
         # [".*?酒.*?${cat}?"]
-        
+
         if len(raw_furs) > 1:
             await send_image()
             return
-        
+
         if(len(raw_furs) == 1):
             while True:
                 try:
@@ -828,7 +878,7 @@ class Fur(Plugin):
                     return
         ...
 
-    
 
-            
+
+
 
