@@ -63,7 +63,7 @@ logger = get_logger()
 genai.configure(api_key=config.GEMINI_API_KEY)
 
 # gemini-2.0-flash
-model = genai.GenerativeModel('gemini-3-pro-preview')
+model = genai.GenerativeModel('gemini-3.5-flash')
 
 class Dir(Enum):
     motions = auto()
