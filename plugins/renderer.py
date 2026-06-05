@@ -215,6 +215,17 @@ class Renderer(Plugin):
 
         page.on('request', lambda req: asyncio.ensure_future(handle_request(req)))
 
+    async def _wait_render_ready(self, page):
+        await page.evaluate('''() => {
+            const waitFrames = () => new Promise(resolve => {
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+            });
+            if (document.fonts && document.fonts.ready) {
+                return document.fonts.ready.then(waitFrames, waitFrames);
+            }
+            return waitFrames();
+        }''')
+
     def _limit_image_dimensions(self, image: PILImage.Image):
         max_dimension = max(1, int(self.max_animation_dimension))
         if max(image.size) <= max_dimension:
@@ -287,6 +298,7 @@ class Renderer(Plugin):
                         # await page.resume_script()
                         await page.waitForSelector(done_selector)
                         await page.waitForSelector(target_selector)
+                    await self._wait_render_ready(page)
                     ...
 
                 if not fullpage:
