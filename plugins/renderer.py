@@ -5,6 +5,7 @@ import gc
 import contextlib
 import mimetypes
 import os
+import signal
 from mirai import Image
 from plugin import InstrAttr, Plugin, autorun, delegate, enable_backup, route
 from pyppeteer import launch
@@ -34,21 +35,43 @@ class Renderer(Plugin):
     max_animation_dimension: int = 960
     browser_restart_render_count: int = 80
     browser_restart_rss_mb: int = 512
+    browser_idle_close_seconds: int = 10 * 60
 
     def __init__(self):
         self.render_lock = asyncio.Lock()
         self.browser = None
         self.browser_render_count = 0
+        self.last_render_request_ts = 0
         self._atexit_registered = False
 
     @autorun
     async def startup(self):
         ...
         self.render_lock = asyncio.Lock()
-        await self._ensure_browser()
         if not self._atexit_registered:
             atexit.register(self._close_browser_at_exit)
             self._atexit_registered = True
+        await self._idle_close_browser()
+
+    async def _idle_close_browser(self):
+        while True:
+            await asyncio.sleep(60)
+            if not self._browser_alive():
+                continue
+            last_render_request_ts = self.last_render_request_ts
+            idle_seconds = time.time() - last_render_request_ts
+            if last_render_request_ts <= 0 or idle_seconds < self.browser_idle_close_seconds:
+                continue
+            async with self.render_lock:
+                idle_seconds = time.time() - self.last_render_request_ts
+                if (
+                    self._browser_alive()
+                    and self.last_render_request_ts > 0
+                    and idle_seconds >= self.browser_idle_close_seconds
+                ):
+                    logger.info(f'close idle chromium: idle_seconds={idle_seconds:.1f}')
+                    await self._close_browser()
+                    gc.collect()
 
     def _browser_args(self):
         return [
@@ -80,7 +103,11 @@ class Renderer(Plugin):
         self.browser = await launch(
             headless=False,
             executablePath=r'/usr/bin/chromium',
-            args=self._browser_args()
+            args=self._browser_args(),
+            autoClose=False,
+            handleSIGINT=False,
+            handleSIGTERM=False,
+            handleSIGHUP=False,
         )
         self.browser_render_count = 0
 
@@ -102,14 +129,20 @@ class Renderer(Plugin):
         self.browser = None
         if browser is None:
             return
-        with contextlib.suppress(Exception):
+        process = getattr(browser, 'process', None)
+        root_pid = getattr(process, 'pid', None) if process is not None else None
+        try:
             await browser.close()
+        except Exception:
+            self._terminate_browser_process(process, root_pid)
 
     def _close_browser_at_exit(self):
         browser = getattr(self, 'browser', None)
         if browser is None:
             return
         self.browser = None
+        process = getattr(browser, 'process', None)
+        root_pid = getattr(process, 'pid', None) if process is not None else None
         try:
             loop = asyncio.new_event_loop()
             try:
@@ -118,10 +151,79 @@ class Renderer(Plugin):
                 loop.close()
             return
         except Exception:
-            process = getattr(browser, 'process', None)
+            self._terminate_browser_process(process, root_pid)
+
+    def _browser_tree_pids(self, root_pid: int):
+        if root_pid is None or not os.path.isdir('/proc'):
+            return []
+
+        children = {}
+        for name in os.listdir('/proc'):
+            if not name.isdigit():
+                continue
+            pid = int(name)
+            try:
+                with open(os.path.join('/proc', name, 'status'), encoding='utf-8') as status_file:
+                    for line in status_file:
+                        if line.startswith('PPid:'):
+                            ppid = int(line.split()[1])
+                            children.setdefault(ppid, []).append(pid)
+                            break
+            except OSError:
+                continue
+
+        pids = []
+        stack = [root_pid]
+        seen = set()
+        while stack:
+            pid = stack.pop()
+            if pid in seen:
+                continue
+            seen.add(pid)
+            pids.append(pid)
+            stack.extend(children.get(pid, []))
+        return pids
+
+    def _process_alive(self, pid: int):
+        if pid is None:
+            return False
+        status_path = os.path.join('/proc', str(pid), 'status')
+        if os.path.exists(status_path):
+            with contextlib.suppress(OSError):
+                with open(status_path, encoding='utf-8') as status_file:
+                    for line in status_file:
+                        if line.startswith('State:'):
+                            return 'Z' not in line.split()[1]
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def _terminate_browser_process(self, process, root_pid: int):
+        if root_pid is None:
             if process is not None and getattr(process, 'poll', lambda: None)() is None:
                 with contextlib.suppress(Exception):
                     process.terminate()
+            return
+
+        pids = self._browser_tree_pids(root_pid) or [root_pid]
+        for pid in sorted(pids, reverse=True):
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGTERM)
+
+        deadline = time.time() + 3
+        while time.time() < deadline and any(self._process_alive(pid) for pid in pids):
+            time.sleep(0.05)
+
+        for pid in sorted(pids, reverse=True):
+            if self._process_alive(pid):
+                with contextlib.suppress(OSError):
+                    os.kill(pid, signal.SIGKILL)
+
+        if process is not None:
+            with contextlib.suppress(Exception):
+                process.wait(timeout=1)
 
     def _browser_root_pid(self):
         if self.browser is None:
@@ -265,6 +367,7 @@ class Renderer(Plugin):
         ...
         # # https://developer.mozilla.org/en-US/docs/Web/API/Animation/playbackRate
         async with self.render_lock:
+            self.last_render_request_ts = time.time()
             await self._ensure_browser()
             start = time.time()
             page = None
