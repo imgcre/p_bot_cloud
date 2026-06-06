@@ -1124,11 +1124,15 @@ class NapCatBot:
             )
         if typ == "image":
             if data.get("emoji_id") or data.get("emoji_package_id"):
+                emoji_id = self._int_or_original(data.get("emoji_id"))
+                emoji_package_id = self._int_or_original(data.get("emoji_package_id"))
                 return MarketFace(
-                    id=int(data.get("emoji_id") or 0),
+                    id=emoji_package_id if emoji_package_id is not None else emoji_id,
                     name=data.get("summary"),
                     image_id=data.get("file") or data.get("url"),
                     url=data.get("url"),
+                    emoji_id=emoji_id,
+                    emoji_package_id=emoji_package_id,
                 )
             return Image(imageId=data.get("file"), url=data.get("url"))
         if typ == "record":
@@ -1227,6 +1231,15 @@ class NapCatBot:
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _int_or_original(value: Any) -> Any:
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
 
     def _is_request_approved(self, operate: RespOperate) -> bool:
         return operate == RespOperate.ALLOW or bool(getattr(operate, "value", 0) & RespOperate.ALLOW.value)

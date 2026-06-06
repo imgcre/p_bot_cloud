@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
+
+
+MarketFaceId = Union[int, str]
 
 
 def patch_mirai_models() -> None:
@@ -12,10 +15,12 @@ def patch_mirai_models() -> None:
     if not hasattr(message, "MarketFace"):
         class MarketFace(message.MessageComponent):
             type: str = "MarketFace"
-            id: Optional[int] = None
+            id: Optional[MarketFaceId] = None
             name: Optional[str] = None
             image_id: Optional[str] = None
             url: Optional[str] = None
+            emoji_id: Optional[MarketFaceId] = None
+            emoji_package_id: Optional[MarketFaceId] = None
 
         message.MarketFace = MarketFace
         if hasattr(message, "__all__") and "MarketFace" not in message.__all__:
