@@ -520,19 +520,56 @@ class Gpt(Plugin):
                 segments.append(segment)
         return segments, buffer
 
+    def _text_len_after_rich_render(self, text: str):
+        text = re.sub(r'```[^\n`]*\n?.*?```', '', text, flags=re.DOTALL)
+        text = re.sub(
+            r'\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$',
+            '',
+            text,
+            flags=re.DOTALL,
+        )
+        return len(text)
+
+    def _find_rendered_fallback_break(self, text: str):
+        current_len = 0
+        split_at = None
+        preferred_split_at = None
+        candidates = {'\n', '。', '！', '？', '!', '?', '，', ',', '、', ' '}
+        rich_pattern = re.compile(
+            r'```[^\n`]*\n?.*?```|\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$',
+            re.DOTALL,
+        )
+        pos = 0
+
+        for match in rich_pattern.finditer(text):
+            plain = text[pos:match.start()]
+            for offset, char in enumerate(plain):
+                current_len += 1
+                absolute_pos = pos + offset + 1
+                if char in candidates:
+                    preferred_split_at = absolute_pos
+                if current_len > MAX_AI_MESSAGE_CHARS:
+                    return preferred_split_at or absolute_pos
+            pos = match.end()
+            split_at = pos
+
+        plain = text[pos:]
+        for offset, char in enumerate(plain):
+            current_len += 1
+            absolute_pos = pos + offset + 1
+            if char in candidates:
+                preferred_split_at = absolute_pos
+            if current_len > MAX_AI_MESSAGE_CHARS:
+                return preferred_split_at or split_at or absolute_pos
+        return None
+
     def _take_fallback_segment(self, buffer: str):
-        if len(buffer) <= MAX_AI_MESSAGE_CHARS:
+        if self._text_len_after_rich_render(buffer) <= MAX_AI_MESSAGE_CHARS:
             return None, buffer
 
-        candidates = ['\n', '。', '！', '？', '!', '?', '，', ',', '、', ' ']
-        split_at = None
-        for sep in candidates:
-            idx = buffer.rfind(sep, 0, MAX_AI_MESSAGE_CHARS + 1)
-            if idx > 0:
-                split_at = idx + len(sep)
-                break
+        split_at = self._find_rendered_fallback_break(buffer)
         if split_at is None:
-            split_at = MAX_AI_MESSAGE_CHARS
+            return None, buffer
         return buffer[:split_at], buffer[split_at:]
 
     async def _postprocess_ai_text(self, say: str):
@@ -1176,4 +1213,3 @@ class ChatContextMan():
             async with session.get('https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc') as response:
                 j = await response.json()
                 return [e['Title'] for e in j['data']]
-
