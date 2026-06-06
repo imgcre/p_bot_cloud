@@ -16,7 +16,7 @@ import configs.config as config
 from event_types import EffectiveSpeechEvent, ViolationEvent
 import aiohttp
 from mirai import At, AtAll, Event, Face, GroupMessage, Image, MessageChain, MessageEvent, Plain, TempMessage
-from mirai.models.entities import GroupMember, MemberInfoModel, Group
+from mirai.models.entities import GroupMember, Group
 from plugin import AchvCustomizer, Context, Inject, InstrAttr, MessageContext, PathArg, Plugin, any_instr, autorun, delegate, enable_backup, join_req_instr, joined_instr, recall_instr, route, top_instr
 from utilities import AchvEnum, AchvExtra, AchvOpts, AchvRarity, AdminType, GroupLocalStorage, GroupOp, GroupSpec, ProxyContext, RewardEnum, Upgraded, get_logger, handler, throttle_config
 from mirai.models.events import GroupRecallEvent, MemberJoinRequestEvent, MemberJoinEvent
@@ -588,17 +588,17 @@ class Admin(Plugin, AchvCustomizer):
     async def admin_set_special_title(self, at: At, title :str, group: Group):
         async with self.privilege(type=AdminType.SUPER):
             print(f'{title=}')
-            await self.bot.member_info().set(group.id, at.target, MemberInfoModel(
-                special_title=title
-            ))
+            await self.bot.member_info().set(group.id, at.target, {
+                "special_title": title
+            })
 
     @top_instr('设置空头衔')
     async def admin_set_empty_special_title(self, at: At, title :str, group: Group):
         async with self.privilege(type=AdminType.SUPER):
             print(f'{title=}')
-            await self.bot.member_info().set(group.id, at.target, MemberInfoModel(
-                special_title=title
-            ))
+            await self.bot.member_info().set(group.id, at.target, {
+                "special_title": title
+            })
 
     # @any_instr()
     # async def keep_long_title(self, member: GroupMember):
@@ -622,9 +622,9 @@ class Admin(Plugin, AchvCustomizer):
         if title is None:
             title = ''
         
-        await self.bot.member_info().set(member.group.id, member.id, MemberInfoModel(
-            special_title=title
-        ))
+        await self.bot.member_info().set(member.group.id, member.id, {
+            "special_title": title
+        })
 
     @top_instr('关联', InstrAttr.FORCE_BACKUP, InstrAttr.NO_ALERT_CALLER)
     async def associate_cmd(self, man: MemberAssociateMan, *ats: At):

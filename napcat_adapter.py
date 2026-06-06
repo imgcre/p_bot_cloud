@@ -17,7 +17,7 @@ from dacite.core import _build_value
 from mirai import At, AtAll, Face, FriendMessage, GroupMessage, Image, MessageChain, Plain, TempMessage, Voice
 from mirai.asgi import ASGI
 from mirai.models.api import RespOperate
-from mirai.models.entities import Friend, Group, GroupConfigModel, GroupMember, MemberInfoModel, Permission, Subject
+from mirai.models.entities import Friend, Group, GroupConfigModel, GroupMember, Permission, Subject
 from mirai.models.events import (
     Event,
     MemberCardChangeEvent,
@@ -645,23 +645,73 @@ class NapCatBot:
             self._member_cache[(member.group.id, member.id)] = member
         return ListResponse(data=members)
 
+    def _get_member_info_update_value(self, info: Any, *names: str):
+        fields_set = getattr(info, "__fields_set__", None)
+        if fields_set is None:
+            fields_set = getattr(info, "model_fields_set", None)
+
+        candidate_names = list(dict.fromkeys(names))
+        aliases = getattr(info, "__fields__", None)
+        if aliases:
+            for field_name, field in aliases.items():
+                alias = getattr(field, "alias", None)
+                if not alias:
+                    continue
+                if field_name in candidate_names and alias not in candidate_names:
+                    candidate_names.append(alias)
+                if alias in candidate_names and field_name not in candidate_names:
+                    candidate_names.append(field_name)
+
+        if isinstance(info, dict):
+            for name in candidate_names:
+                if name in info:
+                    return info[name]
+            return None
+
+        for name in candidate_names:
+            if fields_set is not None and name not in fields_set:
+                continue
+            if hasattr(info, name):
+                return getattr(info, name)
+
+        if fields_set is not None:
+            return None
+
+        for name in candidate_names:
+            if hasattr(info, name):
+                return getattr(info, name)
+        return None
+
     def member_info(self):
         bot = self
 
         class MemberInfoAccessor:
-            async def set(self, group: int, member: int, info: MemberInfoModel):
-                if getattr(info, "member_name", None):
+            async def set(self, group: int, member: int, info: Any):
+                group_card = bot._get_member_info_update_value(info, "member_name", "memberName", "name", "card")
+                special_title = bot._get_member_info_update_value(info, "special_title", "specialTitle")
+                changed = False
+                if group_card is not None:
                     await bot.call_action("set_group_card", {
                         "group_id": group,
                         "user_id": member,
-                        "card": info.member_name,
+                        "card": group_card,
                     })
-                if getattr(info, "special_title", None) is not None:
+                    cached = bot._member_cache.get((int(group), int(member)))
+                    if cached is not None:
+                        cached.member_name = group_card
+                    changed = True
+                if special_title is not None:
                     await bot.call_action("set_group_special_title", {
                         "group_id": group,
                         "user_id": member,
-                        "special_title": info.special_title,
+                        "special_title": special_title,
                     })
+                    cached = bot._member_cache.get((int(group), int(member)))
+                    if cached is not None:
+                        cached.special_title = special_title
+                    changed = True
+                if not changed:
+                    logger.debug("member_info.set ignored empty update group_id=%s user_id=%s info=%r", group, member, info)
 
         return MemberInfoAccessor()
 

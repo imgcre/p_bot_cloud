@@ -1,6 +1,6 @@
 from event_types import EffectiveSpeechEvent
 from mirai import GroupMessage, MessageEvent, Voice, Plain
-from mirai.models.entities import GroupMember, MemberInfoModel
+from mirai.models.entities import GroupMember
 
 from plugin import AchvCustomizer, Inject, Plugin, delegate, fall_instr, top_instr, any_instr, InstrAttr, route
 import random
@@ -68,4 +68,3 @@ class Meow(Plugin, AchvCustomizer):
         await self.achv.submit(MeowAchv.CACTUS)
         await self.events.emit(EffectiveSpeechEvent())
 
-        

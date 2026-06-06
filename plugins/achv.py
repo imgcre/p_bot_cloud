@@ -13,7 +13,7 @@ from plugin import AchvCustomizer, Inject, InjectNotifier, InstrAttr, Plugin, an
 from utilities import AchvEnum, AchvExtra, AchvInfo, AchvRarity, AchvRarityVal, AdminType, GroupLocalStorage, GroupOp, breakdown_chain_sync, get_logger, throttle_config
 from regex_emoji import EMOJI_REGEXP, EMOJI_SEQUENCE
 import typing
-from mirai.models.entities import GroupMember, MemberInfoModel, Group
+from mirai.models.entities import GroupMember, Group
 from mirai.models.events import MemberCardChangeEvent
 
 from typing import TYPE_CHECKING
@@ -680,9 +680,9 @@ class Achv(Plugin, InjectNotifier):
 
         if new_name != member.member_name:
             logger.info(f'cname {member.member_name} -> {new_name}')
-            await self.bot.member_info().set(member.group.id, member.id, MemberInfoModel(
-                name=new_name
-            ))
+            await self.bot.member_info().set(member.group.id, member.id, {
+                "member_name": new_name
+            })
 
     @delegate()
     async def get_raw_member_name(self, member: GroupMember):
