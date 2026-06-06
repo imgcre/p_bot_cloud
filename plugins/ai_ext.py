@@ -142,8 +142,19 @@ class AiExt(Plugin):
         return Image(base64=b64_img)
 
     def _get_code_font_name(self):
+        font_names = [
+            'Noto Sans Mono CJK SC',
+            'Noto Sans Mono CJK',
+        ]
+        for font_name in font_names:
+            try:
+                from pygments.formatters.img import FontManager
+                FontManager(font_name, 28)
+                return font_name
+            except Exception:
+                ...
+
         font_paths = [
-            '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
             '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
             '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
             '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf',
@@ -151,6 +162,7 @@ class AiExt(Plugin):
             r'C:\Windows\Fonts\NotoSansSC-VF.ttf',
             r'C:\Windows\Fonts\msyh.ttc',
             r'C:\Windows\Fonts\simhei.ttf',
+            '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
         ]
         for font_path in font_paths:
             if Path(font_path).exists():
@@ -159,7 +171,7 @@ class AiExt(Plugin):
 
     def _render_code_image(self, code: str, lang: str = ''):
         font_name = self._get_code_font_name()
-        key = ('code', 'cjk-font-v1', font_name, lang, code)
+        key = ('code', 'cjk-font-v2', font_name, lang, code)
         cached = self._get_cached_rich_image(key)
         if cached is not None:
             return cached
