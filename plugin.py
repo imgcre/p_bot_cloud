@@ -452,6 +452,8 @@ class Context(ResolverMixer):
 
     def __exit__(self, type, value, trace):
         self.engine.clear_dirty_plugins()
+        if type is not None and issubclass(type, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+            return False
         if type is not None and isinstance(self, OutOfContext):
             logger.warning('exception catched by context')
             traceback.print_exc()
@@ -1167,7 +1169,9 @@ def timer(interval_s_or_cb: float=1, *, exactly: bool=True):
                     prev = time.time()
                     with ctx:
                         await fn(self)
-                except:
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
                     traceback.print_exc()
                 finally:
                     real_delay = interval_s - (time.time() - prev) if exactly else interval_s
@@ -1188,7 +1192,9 @@ def timer_d(fn):
             try:
                 with ctx:
                     await fn(self)
-            except:
+            except asyncio.CancelledError:
+                raise
+            except Exception:
                 ...
     return wrapper
 

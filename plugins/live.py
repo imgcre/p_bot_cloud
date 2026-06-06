@@ -1849,10 +1849,15 @@ class Live(Plugin, AchvCustomizer):
                     async for message in self.mqtt_client.messages:
                         try:
                             await self.handle_message(message)
-                        except: 
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
                             traceback.print_exc()
+            except asyncio.CancelledError:
+                logger.info("live mqtt task cancelled")
+                raise
             except aiomqtt.MqttError:
                 logger.warning(f"Connection lost; Reconnecting in {interval} seconds ...")
                 await asyncio.sleep(interval)
-            except:
+            except Exception:
                 traceback.print_exc()
