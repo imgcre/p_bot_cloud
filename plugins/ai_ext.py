@@ -6,6 +6,7 @@ from decimal import Decimal
 from io import BytesIO
 import random
 import re
+from pathlib import Path
 from typing import Final,  Optional
 from event_types import EffectiveSpeechEvent
 from mirai import At, GroupMessage, Image, MessageEvent, Plain
@@ -140,8 +141,25 @@ class AiExt(Plugin):
             self.rich_image_cache.popitem(last=False)
         return Image(base64=b64_img)
 
+    def _get_code_font_name(self):
+        font_paths = [
+            '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf',
+            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+            r'C:\Windows\Fonts\NotoSansSC-VF.ttf',
+            r'C:\Windows\Fonts\msyh.ttc',
+            r'C:\Windows\Fonts\simhei.ttf',
+        ]
+        for font_path in font_paths:
+            if Path(font_path).exists():
+                return font_path
+        return 'Droid Sans Fallback'
+
     def _render_code_image(self, code: str, lang: str = ''):
-        key = ('code', lang, code)
+        font_name = self._get_code_font_name()
+        key = ('code', 'cjk-font-v1', font_name, lang, code)
         cached = self._get_cached_rich_image(key)
         if cached is not None:
             return cached
@@ -159,6 +177,7 @@ class AiExt(Plugin):
         formatter = ImageFormatter(
             style='one-dark',
             line_numbers=False,
+            font_name=font_name,
             font_size=28,
             line_pad=6,
             image_pad=24,
