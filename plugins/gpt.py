@@ -521,28 +521,30 @@ class Gpt(Plugin):
                 segments.append(segment)
         return segments, buffer
 
-    def _text_len_after_rich_render(self, text: str):
-        text = re.sub(r'```[^\n`]*\n?.*?```', '', text, flags=re.DOTALL)
-        text = re.sub(
-            r'\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$',
-            '',
-            text,
-            flags=re.DOTALL,
+    def _iter_rich_spans(self, text: str):
+        pattern = re.compile(
+            r'```[^\n`]*\n?.*?```|```[^\n`]*\n?.*$|\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$',
+            re.DOTALL,
         )
-        return len(text)
+        return pattern.finditer(text)
+
+    def _text_len_after_rich_render(self, text: str):
+        total = 0
+        pos = 0
+        for match in self._iter_rich_spans(text):
+            total += len(text[pos:match.start()])
+            pos = match.end()
+        total += len(text[pos:])
+        return total
 
     def _find_rendered_fallback_break(self, text: str):
         current_len = 0
         split_at = None
         preferred_split_at = None
         candidates = {'\n', '。', '！', '？', '!', '?', '，', ',', '、', ' '}
-        rich_pattern = re.compile(
-            r'```[^\n`]*\n?.*?```|\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$',
-            re.DOTALL,
-        )
         pos = 0
 
-        for match in rich_pattern.finditer(text):
+        for match in self._iter_rich_spans(text):
             plain = text[pos:match.start()]
             for offset, char in enumerate(plain):
                 current_len += 1
