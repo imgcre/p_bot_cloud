@@ -207,6 +207,7 @@ class AiExt(Plugin):
             r'\sim': '∼',
             r'\cong': '≅',
             r'\equiv': '≡',
+            r'\implies': '=>',
             r'\infty': '∞',
             r'\alpha': 'α',
             r'\beta': 'β',
