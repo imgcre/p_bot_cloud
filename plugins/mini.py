@@ -6,7 +6,6 @@ import traceback
 from types import MethodType
 import aiohttp
 from mirai import get_logger
-from mirai.asgi import ASGI
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from nap_cat_types import GetGroupMemberInfoResp
@@ -186,7 +185,7 @@ class Mini(Plugin):
 
     @autorun
     async def startup(self):
-        asgi = ASGI()
+        asgi = self.bot.asgi
 
         for _, method in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(method, '_endpoint_'):

@@ -7,7 +7,6 @@ from plugin import Context, Inject, Plugin, any_instr, autorun, delegate, instr,
 import gc
 import time
 from collections import defaultdict
-import objgraph
 
 from utilities import handler
 
@@ -84,6 +83,10 @@ class Man(Plugin):
     
     @top_instr('内存监控')
     async def monitor_mem_cmd(self):
+        try:
+            import objgraph
+        except ImportError:
+            return '缺少 objgraph 依赖'
         objgraph.show_backrefs(
             objgraph.by_type('deque')[:5], 
             max_depth=10,

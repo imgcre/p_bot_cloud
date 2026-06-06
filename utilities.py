@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 import typing
 from uuid import UUID
 import inflection
-from mirai import At, GroupMessage, MessageChain, Mirai, Plain, TempMessage
+from mirai import At, GroupMessage, MessageChain, Plain, TempMessage
 from mirai.models.entities import GroupMember, Group
 from mirai.models.events import NudgeEvent, Event
 from dacite import Config
@@ -77,7 +77,7 @@ class Msg():
 
 @dataclass
 class MsgOp():
-    bot: Mirai
+    bot: Any
     msg: Msg
     group: Group
 
@@ -472,7 +472,7 @@ class Overrides():
 
 @dataclass
 class GroupMemberOp():
-    bot: Mirai
+    bot: Any
     member: GroupMember
 
     async def mute(self, time_s: int):
@@ -495,7 +495,7 @@ class GroupMemberOp():
 
 @dataclass
 class GroupOp():
-    bot: Mirai
+    bot: Any
     group: Group
 
     async def send(self, msg):
@@ -549,7 +549,7 @@ class Source():
 
 @dataclass
 class SourceOp():
-    bot: Mirai
+    bot: Any
     source: Source
 
     async def send(self, msg, *, to: Target=None):
@@ -731,6 +731,7 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 def get_logger():
+    os.makedirs(LOGS_PATH, exist_ok=True)
     frm = inspect.stack()[1]
     mod = inspect.getmodule(frm[0])
     logger = logging.getLogger(mod.__name__.split('.')[-1])

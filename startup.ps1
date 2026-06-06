@@ -1,2 +1,2 @@
 $env:PYPPETEER_CHROMIUM_REVISION=1226537
-python ./app.py
+uv run python ./app.py

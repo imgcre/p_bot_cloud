@@ -410,10 +410,4 @@ class RusRou(Plugin):
             res.extend([
                 f'常因为出{most_like_gesture_when_loss_pk_2[0].value}而输掉({(most_like_gesture_when_loss_pk_2[1]) * 100:.1f}%)'
             ])
-
-
         return ['\n'.join(res)]
-
-# D:\projects\python\nap_cat>launcher-win10.bat
-# D:\projects\overflow-1.0.2>start.bat
-        

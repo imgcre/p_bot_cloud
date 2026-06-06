@@ -1,15 +1,9 @@
-from email.headerregistry import Group
-from typing import Optional, Type, TypeVar, Union, overload
-from mirai import GroupMessage, MessageChain, At
+from typing import Type, TypeVar, Union, overload
+from mirai import GroupMessage
 from plugin import Plugin, delegate, top_instr, route, enable_backup, Inject
-from mirai.models.message import Forward, ForwardMessageNode, MessageComponent
-from mirai.models.entities import Friend, GroupMember
-from dacite import from_dict, Config
+from mirai.models.entities import GroupMember
+from dacite import Config
 from dacite.core import _build_value
-import aiohttp
-from dataclasses import dataclass
-
-from typing import TYPE_CHECKING
 
 from utilities import User
 from nap_cat_types import *
@@ -20,15 +14,13 @@ T = TypeVar('T')
 @enable_backup
 class NapCat(Plugin):
 
-    async def call(self, endpoint: str, data: dict, ret_type: Type[T] = None) -> T:
-        async with aiohttp.ClientSession() as session:
-            headers = {
-               'Authorization': 'Bearer sFUXXyiv07HzX'
-            }
-            async with session.post(f'http://127.0.0.1:3000{endpoint}', json=data, headers=headers) as resp:
-                if ret_type is not None:
-                    config = Config()
-                    return _build_value(type_=ret_type, data=(await resp.json())['data'], config=config)
+    async def call(self, action: str, data: dict, ret_type: Type[T] = None) -> T:
+        action = action.removeprefix('/')
+        payload = await self.bot.call_action_data(action, data)
+        if ret_type is not None:
+            config = Config()
+            return _build_value(type_=ret_type, data=payload, config=config)
+        return payload
 
     @delegate()
     async def get_stranger_info(self, user: User) -> GetStrangerInfoResp:

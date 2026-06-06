@@ -8,7 +8,6 @@ import os
 import signal
 from mirai import Image
 from plugin import InstrAttr, Plugin, autorun, delegate, enable_backup, route
-from pyppeteer import launch
 import urllib.parse
 import uuid
 import json
@@ -100,6 +99,10 @@ class Renderer(Plugin):
         ]
 
     async def _launch_browser(self):
+        try:
+            from pyppeteer import launch
+        except ImportError as exc:
+            raise RuntimeError('缺少 pyppeteer 依赖，无法使用渲染功能') from exc
         self.browser = await launch(
             headless=False,
             executablePath=r'/usr/bin/chromium',

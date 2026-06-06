@@ -1,27 +1,20 @@
-import json
-# import nest_asyncio
-
-# nest_asyncio.apply()
-# NFC先改，改完在这里测试
 import traceback
 from activator import SharpActivator
-from mirai import Event, MessageChain, Mirai, MessageEvent, Plain, WebSocketAdapter
+import mirai_compat  # noqa: F401
+from mirai import Event, MessageChain, MessageEvent, Plain
 import plugin
 from plugin import CommandNotFoundError
-from mirai.models.events import MemberCardChangeEvent, GroupRecallEvent, NudgeEvent, MemberJoinRequestEvent, MemberJoinEvent, MemberUnmuteEvent, BotOfflineEventActive, BotOfflineEventForce, BotOfflineEventDropped, GroupMessage, FriendMessage, StrangerMessage, TempMessage
+from mirai.models.events import MemberCardChangeEvent, GroupRecallEvent, NudgeEvent, MemberJoinRequestEvent, MemberJoinEvent, MemberUnmuteEvent, GroupMessage, FriendMessage, StrangerMessage, TempMessage
 from mirai.models.api import RespOperate
 import zhconv
 import configs.config as config
+from napcat_adapter import NapCatBot, get_config_value
 
-from mirai.asgi import ASGI
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-
-bot = Mirai(config.BOT_QQ_ID, adapter=WebSocketAdapter(
-    verify_key=config.MIRAI_VERIFY_KEY, 
-    host=config.MIRAI_HOST, 
-    port=config.MIRAI_PORT
-))
+bot = NapCatBot(
+    config.BOT_QQ_ID,
+    ws_url=get_config_value(config, "NAPCAT_WS_URL", "ws://127.0.0.1:3001"),
+    access_token=get_config_value(config, "NAPCAT_ACCESS_TOKEN", None),
+)
 
 activator = SharpActivator()
 
@@ -33,7 +26,8 @@ async def on_join_req(event: MemberJoinRequestEvent):
         return
     with engine.of(event) as ctx:
         async def resp(op: RespOperate, msg='bot自动处理'):
-            await bot.resp_member_join_request_event(event.event_id, event.from_id, event.group_id, op, msg)
+            event_id = getattr(event, 'onebot_flag', event.event_id)
+            await bot.resp_member_join_request_event(event_id, event.from_id, event.group_id, op, msg)
         await ctx.exec_join(resp)
 
 @bot.on(Event)
@@ -56,9 +50,6 @@ async def on_event(event: Event):
                 return
         with engine.of(event) as ctx:
             await ctx.exec()
-    if isinstance(event, (BotOfflineEventActive, BotOfflineEventForce, BotOfflineEventDropped)):
-        print(f'offline!, {event=}')
-
 @bot.on(MessageEvent)
 async def on_message(event: MessageEvent):
     if isinstance(event, GroupMessage):
@@ -122,9 +113,6 @@ async def on_message(event: MessageEvent):
 
 def main():
     engine.load()
-
-    # asgi = ASGI()
-    # asgi.add_route('/test', test_endpoint, ['POST'])
 
     bot.run(host='0.0.0.0')
     

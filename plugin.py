@@ -11,7 +11,7 @@ import pickle
 import glob
 import re
 from typing import Union
-from mirai import Event, FriendMessage, GroupMessage, MessageChain, MessageEvent, Mirai, Plain, At, StrangerMessage, TempMessage
+from mirai import Event, FriendMessage, GroupMessage, MessageChain, MessageEvent, Plain, At, StrangerMessage, TempMessage
 from mirai.models.events import NudgeEvent, MemberJoinRequestEvent, GroupRecallEvent, MemberJoinEvent, MemberUnmuteEvent, MemberCardChangeEvent
 from mirai.models.message import MessageComponent, Quote
 from mirai.models.entities import GroupMember, Group
@@ -234,7 +234,7 @@ def delegate(*attr, custom_resolver: Optional[Callable[[MethodType, list], Await
 
 
 class Plugin(object, metaclass=MetaPlugin):
-    bot: Mirai
+    bot: Any
     path: PluginPath
     backup_man: 'BackupMan'
     engine: 'Engine'
@@ -268,7 +268,7 @@ class Plugin(object, metaclass=MetaPlugin):
         if member_id is not None:
             return await self.bot.get_group_member(group.id, member_id)
 
-    def init(self, bot: Mirai, engine: 'Engine'):
+    def init(self, bot: Any, engine: 'Engine'):
         self.bot = bot
         self.engine = engine
         self.backup_man = BackupMan(self)
@@ -323,10 +323,10 @@ class PlaceholderEvent(Event):
 class Engine():
     plugins: Dict[str, Plugin]
     dirty_plugins: Set[Plugin]
-    bot: Mirai
+    bot: Any
     _context: contextvars.ContextVar = contextvars.ContextVar['Context']('Context')
 
-    def __init__(self, bot: Mirai) -> None:
+    def __init__(self, bot: Any) -> None:
         self.plugins = {}
         self.dirty_plugins = set()
         # self._context = contextvars.ContextVar[Context]('Context')
