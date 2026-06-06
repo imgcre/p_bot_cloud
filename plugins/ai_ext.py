@@ -265,9 +265,9 @@ class AiExt(Plugin):
         normalized = []
         for idx, e in enumerate(mc):
             if isinstance(e, str):
-                if idx == 0:
+                if idx == 0 or all(not isinstance(item, str) or len(item.strip()) == 0 for item in mc[:idx]):
                     e = re.sub(r'^[\s，,。]+', '', e)
-                if idx == len(mc) - 1:
+                if idx == len(mc) - 1 or all(not isinstance(item, str) or len(item.strip()) == 0 for item in mc[idx + 1:]):
                     e = re.sub(r'[\s]+$', '', e)
                 if len(e) == 0:
                     continue

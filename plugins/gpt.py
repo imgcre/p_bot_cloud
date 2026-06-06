@@ -516,7 +516,8 @@ class Gpt(Plugin):
         segments = []
         while AI_MSG_BREAK in buffer:
             segment, buffer = buffer.split(AI_MSG_BREAK, 1)
-            if segment.strip():
+            segment = segment.strip()
+            if segment:
                 segments.append(segment)
         return segments, buffer
 
@@ -615,8 +616,12 @@ class Gpt(Plugin):
         return chain
 
     async def _send_ai_segment(self, op: SourceOp, segment: str, sent_msg_ids: list):
+        segment = segment.strip()
+        if not segment:
+            return
         chain = await self._postprocess_ai_text(segment)
         chain = self.ai_ext.render_rich_chain_images(chain)
+        chain = self.ai_ext._normalize_message_chain(chain)
         if len(chain) == 0:
             return
         resp = await op.send(chain)
