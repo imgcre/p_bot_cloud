@@ -199,6 +199,52 @@ class AiExt(Plugin):
         b64_img = base64.b64encode(png_bytes).decode('ascii')
         return self._put_cached_rich_image(key, b64_img)
 
+    def _get_math_font_properties(self):
+        from matplotlib import font_manager, rcParams
+
+        font_paths = [
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf',
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf',
+            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+            r'C:\Windows\Fonts\NotoSansSC-VF.ttf',
+            r'C:\Windows\Fonts\msyh.ttc',
+            r'C:\Windows\Fonts\simhei.ttf',
+        ]
+        for font_path in font_paths:
+            if Path(font_path).exists():
+                try:
+                    font_manager.fontManager.addfont(font_path)
+                except Exception:
+                    ...
+                prop = font_manager.FontProperties(fname=font_path)
+                rcParams['font.sans-serif'] = [prop.get_name(), 'DejaVu Sans']
+                rcParams['axes.unicode_minus'] = False
+                return prop
+
+        font_names = [
+            'Noto Sans CJK SC',
+            'Noto Sans SC',
+            'Source Han Sans SC',
+            'WenQuanYi Micro Hei',
+            'Microsoft YaHei',
+            'SimHei',
+        ]
+        for font_name in font_names:
+            try:
+                font_path = font_manager.findfont(font_name, fallback_to_default=False)
+                prop = font_manager.FontProperties(fname=font_path)
+                rcParams['font.sans-serif'] = [prop.get_name(), 'DejaVu Sans']
+                rcParams['axes.unicode_minus'] = False
+                return prop
+            except Exception:
+                ...
+
+        rcParams['font.sans-serif'] = ['DejaVu Sans']
+        rcParams['axes.unicode_minus'] = False
+        return font_manager.FontProperties(family='DejaVu Sans')
+
     def _get_math_body(self, formula: str):
         body = formula.strip()
         if body.startswith('$$') and body.endswith('$$'):
@@ -300,6 +346,228 @@ class AiExt(Plugin):
             body = body.replace(source, target)
         return body
 
+    def _math_span_pattern(self):
+        return re.compile(
+            r'(\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$)',
+            re.DOTALL,
+        )
+
+    def _is_block_math_formula(self, formula: str):
+        stripped = formula.strip()
+        return (stripped.startswith('$$') and stripped.endswith('$$')) or (
+            stripped.startswith(r'\[') and stripped.endswith(r'\]')
+        )
+
+    def _split_block_math_lines(self, body: str):
+        body = self._normalize_mathtext(body)
+        lines = re.split(r'\\\\|\n+', body)
+        normalized = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            line = line.lstrip('&').replace('&', '')
+            normalized.append(line)
+        return normalized
+
+    def _math_body_chunks(self, body: str):
+        body = self._normalize_mathtext(body)
+        chunks = []
+        last = 0
+        for match in re.finditer(r'\\text\{([^{}]*)\}', body):
+            if match.start() > last:
+                chunks.append(('math', body[last:match.start()]))
+            if match.group(1):
+                chunks.append(('text', match.group(1)))
+            last = match.end()
+        if last < len(body):
+            chunks.append(('math', body[last:]))
+
+        split_chunks = []
+        cjk_pattern = re.compile(r'([\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]+)')
+        for kind, content in chunks:
+            if kind != 'math':
+                split_chunks.append((kind, content))
+                continue
+            for idx, part in enumerate(cjk_pattern.split(content)):
+                if not part:
+                    continue
+                split_chunks.append(('text' if idx % 2 else 'math', part))
+        return [(kind, content) for kind, content in split_chunks if content]
+
+    def _looks_like_math_process(self, text: str):
+        stripped = text.strip()
+        if not stripped or self.AI_MSG_BREAK in stripped:
+            return False
+
+        matches = list(self._math_span_pattern().finditer(stripped))
+        if not matches:
+            return False
+
+        lines = [line for line in stripped.splitlines() if line.strip()]
+        formula_count = len(matches)
+        relation_count = len(re.findall(
+            r'=|≤|≥|=>|\\Rightarrow|\\leq?|\\geq?|因此|所以|于是|因为|故',
+            stripped,
+        ))
+        step_marker_count = len(re.findall(
+            r'(^|\n)\s*(?:\d+[.、)]|[-*]\s|步骤|证明|求证|解[:：]|证[:：]|由|所以|因此|于是|故)',
+            stripped,
+        ))
+        has_process_keyword = any(keyword in stripped for keyword in [
+            '证明', '求证', '推导', '求解', '解法', '化简', '代入', '联立',
+        ])
+
+        for match in matches:
+            formula = match.group(0)
+            body = self._get_math_body(formula)
+            if self._is_block_math_formula(formula) and ('\n' in body or r'\\' in body):
+                return len(lines) >= 2 or relation_count >= 2
+
+        if formula_count >= 3 and (len(lines) >= 2 or relation_count >= 3):
+            return True
+        if formula_count >= 2 and len(lines) >= 3 and (relation_count >= 2 or step_marker_count >= 2):
+            return True
+        return formula_count >= 2 and has_process_keyword and relation_count >= 2
+
+    def _append_math_process_plain(self, lines: list, current_line: list, text: str):
+        parts = text.split('\n')
+        for idx, part in enumerate(parts):
+            if idx > 0:
+                lines.append(current_line)
+                current_line = []
+            if part:
+                current_line.append(('text', part))
+        return current_line
+
+    def _math_process_lines(self, text: str):
+        lines = []
+        current_line = []
+        last = 0
+        for match in self._math_span_pattern().finditer(text):
+            current_line = self._append_math_process_plain(lines, current_line, text[last:match.start()])
+            formula = match.group(0)
+            body = self._get_math_body(formula)
+            if self._is_block_math_formula(formula):
+                if current_line:
+                    lines.append(current_line)
+                    current_line = []
+                for math_line in self._split_block_math_lines(body):
+                    lines.append(self._math_body_chunks(math_line))
+            else:
+                current_line.extend(self._math_body_chunks(body))
+            last = match.end()
+
+        current_line = self._append_math_process_plain(lines, current_line, text[last:])
+        if current_line:
+            lines.append(current_line)
+        return lines
+
+    def _measure_math_lines(self, fig, canvas, lines, font_prop, text_font_size, math_font_size):
+        line_metrics = []
+        for line in lines:
+            line_width = 0
+            line_height = 0
+            chunk_metrics = []
+            for kind, content in line:
+                is_math = kind == 'math'
+                text = f'${content}$' if is_math else content
+                kwargs = {
+                    'fontsize': math_font_size if is_math else text_font_size,
+                    'color': '#abb2bf',
+                    'ha': 'left',
+                    'va': 'top',
+                    'parse_math': is_math,
+                }
+                if not is_math:
+                    kwargs['fontproperties'] = font_prop
+                artist = fig.text(0, 0, text, **kwargs)
+                canvas.draw()
+                bbox = artist.get_window_extent(canvas.get_renderer())
+                artist.remove()
+                width = bbox.width
+                height = bbox.height
+                chunk_metrics.append((width, height))
+                line_width += width
+                line_height = max(line_height, height)
+            if not line:
+                line_height = text_font_size * fig.dpi / 72
+            line_metrics.append((line_width, line_height, chunk_metrics))
+        return line_metrics
+
+    def _render_math_lines_image(self, lines: list, key):
+        font_prop = self._get_math_font_properties()
+        key = (*key, font_prop.get_name())
+        cached = self._get_cached_rich_image(key)
+        if cached is not None:
+            return cached
+
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        dpi = 180
+        text_font_size = 15
+        math_font_size = 15
+        measure_fig = Figure(figsize=(0.01, 0.01), dpi=dpi)
+        measure_canvas = FigureCanvasAgg(measure_fig)
+        line_metrics = self._measure_math_lines(
+            measure_fig,
+            measure_canvas,
+            lines,
+            font_prop,
+            text_font_size,
+            math_font_size,
+        )
+
+        margin_x = 24
+        margin_y = 22
+        line_gap = 9
+        width_px = max(1, int(max((metric[0] for metric in line_metrics), default=1) + margin_x * 2))
+        height_px = int(
+            sum(metric[1] for metric in line_metrics)
+            + max(0, len(line_metrics) - 1) * line_gap
+            + margin_y * 2
+        )
+
+        fig = Figure(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
+        fig.patch.set_facecolor('#282c34')
+        canvas = FigureCanvasAgg(fig)
+
+        y = margin_y
+        for line, (_, line_height, chunk_metrics) in zip(lines, line_metrics):
+            x = margin_x
+            for (kind, content), (chunk_width, _) in zip(line, chunk_metrics):
+                is_math = kind == 'math'
+                kwargs = {
+                    'fontsize': math_font_size if is_math else text_font_size,
+                    'color': '#abb2bf',
+                    'ha': 'left',
+                    'va': 'top',
+                    'parse_math': is_math,
+                }
+                if not is_math:
+                    kwargs['fontproperties'] = font_prop
+                fig.text(
+                    x / width_px,
+                    1 - y / height_px,
+                    f'${content}$' if is_math else content,
+                    **kwargs,
+                )
+                x += chunk_width
+            y += line_height + line_gap
+
+        buffered = BytesIO()
+        fig.savefig(buffered, format='png', transparent=False, facecolor=fig.get_facecolor())
+        b64_img = base64.b64encode(buffered.getvalue()).decode('ascii')
+        return self._put_cached_rich_image(key, b64_img)
+
+    def _render_math_process_image(self, text: str):
+        text = text.strip()
+        lines = self._math_process_lines(text)
+        if not lines:
+            return text
+        return self._render_math_lines_image(lines, ('math-process', 'v2-cjk-mathtext', text))
+
     def _render_math_image(self, formula: str):
         body = self._get_math_body(formula)
 
@@ -309,6 +577,9 @@ class AiExt(Plugin):
         if plain_body is not None:
             return plain_body
         body = self._normalize_mathtext(body)
+        chunks = self._math_body_chunks(body)
+        if len(chunks) > 1 or any(kind == 'text' for kind, _ in chunks):
+            return self._render_math_lines_image([chunks], ('math', 'v3-mixed-cjk-mathtext', body))
 
         key = ('math', 'v2-half-size', body)
         cached = self._get_cached_rich_image(key)
@@ -318,10 +589,11 @@ class AiExt(Plugin):
         from matplotlib.backends.backend_agg import FigureCanvasAgg
         from matplotlib.figure import Figure
 
+        font_prop = self._get_math_font_properties()
         fig = Figure(figsize=(0.01, 0.01), dpi=180)
         fig.patch.set_facecolor('#282c34')
         canvas = FigureCanvasAgg(fig)
-        text = fig.text(0, 0, f'${body}$', fontsize=15, color='#abb2bf')
+        text = fig.text(0, 0, f'${body}$', fontsize=15, color='#abb2bf', fontproperties=font_prop)
         canvas.draw()
         bbox = text.get_window_extent(canvas.get_renderer()).expanded(1.08, 1.35)
 
@@ -338,10 +610,21 @@ class AiExt(Plugin):
         return self._put_cached_rich_image(key, b64_img)
 
     def _split_math_images(self, text: str):
-        math_pattern = re.compile(
-            r'(\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$)',
-            re.DOTALL,
-        )
+        if self.AI_MSG_BREAK in text:
+            parts = []
+            for idx, chunk in enumerate(text.split(self.AI_MSG_BREAK)):
+                if idx > 0:
+                    parts.append(self.AI_MSG_BREAK)
+                parts.extend(self._split_math_images(chunk))
+            return parts
+
+        if self._looks_like_math_process(text):
+            try:
+                return [self._render_math_process_image(text)]
+            except Exception:
+                ...
+
+        math_pattern = self._math_span_pattern()
         parts = []
         last = 0
         for match in math_pattern.finditer(text):
