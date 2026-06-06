@@ -371,14 +371,15 @@ class NapCatBot:
             self._pending.pop(echo, None)
             logger.warning("napcat api failed action=%s echo=%s", action, echo, exc_info=True)
             raise
+        message = payload.get("message") or payload.get("wording") or ""
         resp = response_cls(
             status=payload.get("status", ""),
             retcode=int(payload.get("retcode", -1)),
             data=payload.get("data"),
-            message=payload.get("message", ""),
+            message=message,
         )
-        if resp.retcode not in (0, 1) and resp.status != "ok":
-            raise RuntimeError(f"NapCat action failed: {action}, {resp.retcode}, {resp.message}")
+        if resp.status not in ("ok", "async") or resp.retcode not in (0, 1):
+            raise RuntimeError(f"NapCat action failed: {action}, {resp.status}, {resp.retcode}, {resp.message}")
         logger.debug("napcat api response ok action=%s echo=%s retcode=%s", action, echo, resp.retcode)
         return resp
 
@@ -560,28 +561,46 @@ class NapCatBot:
         return await self.call_action("delete_msg", {"message_id": message_id})
 
     async def mute(self, group: int, member: int, time_s: int):
-        return await self.call_action("set_group_ban", {
-            "group_id": group,
-            "user_id": member,
-            "duration": time_s,
+        group_id = int(group)
+        user_id = int(member)
+        duration = max(0, int(time_s))
+        resp = await self.call_action("set_group_ban", {
+            "group_id": group_id,
+            "user_id": user_id,
+            "duration": duration,
         })
+        cached = self._member_cache.get((group_id, user_id))
+        if cached is not None:
+            cached.mute_time_remaining = duration
+        return resp
 
     async def unmute(self, group: int, member: int):
         return await self.mute(group, member, 0)
 
     async def kick(self, group: int, member: int, msg: str = "", reject_add_request: bool = False):
-        return await self.call_action("set_group_kick", {
-            "group_id": group,
-            "user_id": member,
-            "reject_add_request": reject_add_request,
+        group_id = int(group)
+        user_id = int(member)
+        resp = await self.call_action("set_group_kick", {
+            "group_id": group_id,
+            "user_id": user_id,
+            "reject_add_request": bool(reject_add_request),
         })
+        self._member_cache.pop((group_id, user_id), None)
+        return resp
 
     async def member_admin(self, group: int, member: int, assign: bool):
-        return await self.call_action("set_group_admin", {
-            "group_id": group,
-            "user_id": member,
-            "enable": assign,
+        group_id = int(group)
+        user_id = int(member)
+        enabled = bool(assign)
+        resp = await self.call_action("set_group_admin", {
+            "group_id": group_id,
+            "user_id": user_id,
+            "enable": enabled,
         })
+        cached = self._member_cache.get((group_id, user_id))
+        if cached is not None:
+            cached.permission = Permission.Administrator if enabled else Permission.Member
+        return resp
 
     async def send_nudge(self, target: int, subject: int, kind: str):
         if kind == "Group":
@@ -606,7 +625,10 @@ class NapCatBot:
         group = self._group_cache.get(int(id_))
         if group is not None:
             return group
-        data = await self.call_action_data("get_group_info", {"group_id": id_, "no_cache": False})
+        return await self._fetch_group(id_, no_cache=False)
+
+    async def _fetch_group(self, id_: int, *, no_cache: bool) -> Optional[Group]:
+        data = await self.call_action_data("get_group_info", {"group_id": int(id_), "no_cache": no_cache})
         group = self._group_from_onebot(data)
         self._group_cache[group.id] = group
         return group
@@ -720,7 +742,7 @@ class NapCatBot:
 
         class GroupConfigAccessor:
             async def get(self):
-                group_obj = await bot.get_group(group)
+                group_obj = await bot._fetch_group(group, no_cache=True)
                 return GroupConfigModel(
                     name=group_obj.name if group_obj else str(group),
                     confessTalk=False,
@@ -730,10 +752,22 @@ class NapCatBot:
                 )
 
             async def set(self, conf: GroupConfigModel):
-                return await bot.call_action("set_group_name", {
-                    "group_id": group,
-                    "group_name": conf.name,
+                group_id = int(group)
+                name = str(conf.name)
+                resp = await bot.call_action("set_group_name", {
+                    "group_id": group_id,
+                    "group_name": name,
                 })
+                cached = bot._group_cache.get(group_id)
+                if cached is None:
+                    bot._group_cache[group_id] = Group(
+                        id=group_id,
+                        name=name,
+                        permission=Permission.Member,
+                    )
+                else:
+                    cached.name = name
+                return resp
 
         return GroupConfigAccessor()
 
@@ -1097,7 +1131,7 @@ class NapCatBot:
             specialTitle=data.get("title") or "",
             joinTimestamp=datetime.fromtimestamp(int(data.get("join_time") or 0)),
             lastSpeakTimestamp=datetime.fromtimestamp(int(data.get("last_sent_time") or 0)),
-            muteTimeRemaining=int(data.get("shut_up_timestamp") or 0),
+            muteTimeRemaining=self._mute_time_remaining(data.get("shut_up_timestamp")),
         )
         return member
 
@@ -1115,6 +1149,12 @@ class NapCatBot:
         if role == "admin":
             return Permission.Administrator
         return Permission.Member
+
+    def _mute_time_remaining(self, shut_up_timestamp: Any) -> int:
+        timestamp = int(shut_up_timestamp or 0)
+        if timestamp <= 0:
+            return 0
+        return max(0, timestamp - int(time.time()))
 
     def _is_request_approved(self, operate: RespOperate) -> bool:
         return operate == RespOperate.ALLOW or bool(getattr(operate, "value", 0) & RespOperate.ALLOW.value)
