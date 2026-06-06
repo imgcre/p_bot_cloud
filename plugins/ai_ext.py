@@ -54,6 +54,8 @@ class AiExt(Plugin):
     SPEEDUP_EFFECTIVE_SPEECH: Final = 10 * 60
 
     MAX_BREAKDOWN: Final = 5
+    AI_MSG_BREAK: Final = '<<PBOT_MSG_BREAK>>'
+    MAX_AI_MESSAGE_CHARS: Final = 500
 
     MIN_BREAKDOWN_PROB_WORDS: Final = 5
     MAX_BREAKDOWN_PROB_WORDS: Final = 30
@@ -64,7 +66,7 @@ class AiExt(Plugin):
         self.rich_image_cache = OrderedDict()
 
     @delegate()
-    async def chat(self, event: GroupMessage, *, msg: list):
+    async def chat(self, event: GroupMessage, op: SourceOp, *, msg: list):
         res = await self.gpt.response_with_ai(msg=msg)
         if res is not None:
             await self.bot.send(event, res)
@@ -253,30 +255,104 @@ class AiExt(Plugin):
                 rendered.append(e)
         return rendered
 
+    def render_rich_chain_images(self, mc: list):
+        return self._render_rich_chain_images(mc)
+
+    def _chain_text_len(self, mc: list):
+        return sum(len(e) for e in mc if isinstance(e, str))
+
+    def _normalize_message_chain(self, mc: list):
+        normalized = []
+        for idx, e in enumerate(mc):
+            if isinstance(e, str):
+                if idx == 0:
+                    e = re.sub(r'^[\s，,。]+', '', e)
+                if idx == len(mc) - 1:
+                    e = re.sub(r'[\s]+$', '', e)
+                if len(e) == 0:
+                    continue
+            normalized.append(e)
+        return normalized
+
+    def _split_chain_by_breaks(self, mc: list):
+        messages = [[]]
+        found_break = False
+        for e in mc:
+            if not isinstance(e, str):
+                messages[-1].append(e)
+                continue
+
+            parts = e.split(self.AI_MSG_BREAK)
+            for idx, part in enumerate(parts):
+                if idx > 0:
+                    found_break = True
+                    messages.append([])
+                if part:
+                    messages[-1].append(part)
+
+        messages = [self._normalize_message_chain(m) for m in messages]
+        messages = [m for m in messages if len(m) > 0]
+        return messages, found_break
+
+    def _find_fallback_break(self, text: str):
+        limit = self.MAX_AI_MESSAGE_CHARS
+        if len(text) <= limit:
+            return len(text)
+
+        candidates = ['\n', '。', '！', '？', '!', '?', '，', ',', '、', ' ']
+        for sep in candidates:
+            idx = text.rfind(sep, 0, limit + 1)
+            if idx > 0:
+                return idx + len(sep)
+        return limit
+
+    def _split_text_by_length(self, text: str):
+        parts = []
+        rest = text
+        while len(rest) > self.MAX_AI_MESSAGE_CHARS:
+            idx = self._find_fallback_break(rest)
+            part = rest[:idx].strip()
+            if part:
+                parts.append(part)
+            rest = rest[idx:].strip()
+        if rest:
+            parts.append(rest)
+        return parts
+
+    def _split_chain_by_length(self, mc: list):
+        messages = [[]]
+        current_len = 0
+        for e in mc:
+            if isinstance(e, str):
+                for part in self._split_text_by_length(e):
+                    if current_len > 0 and current_len + len(part) > self.MAX_AI_MESSAGE_CHARS:
+                        messages.append([])
+                        current_len = 0
+                    messages[-1].append(part)
+                    current_len += len(part)
+            else:
+                messages[-1].append(e)
+
+        messages = [self._normalize_message_chain(m) for m in messages]
+        return [m for m in messages if len(m) > 0]
+
+    async def send_chat_segments(self, op: SourceOp, *, mc: list):
+        mc = self._render_rich_chain_images(mc)
+        messages, found_break = self._split_chain_by_breaks(mc)
+        if not found_break:
+            messages = self._split_chain_by_length(mc)
+
+        for i, message in enumerate(messages):
+            if i != 0:
+                text_len = self._chain_text_len(message)
+                await asyncio.sleep(min(0.2 + text_len / 7, 3) if text_len > 0 else 1 + random.random())
+            resp = await op.send(message)
+            self.ai_resp_msg_ids.append(resp.message_id)
+
     @delegate(InstrAttr.BACKGROUND)
     async def as_chat_seq(self, op: SourceOp, *, mc: list):
         # 咱也一样... 不过没关系，咱可以攒着下次用嘛~ 下次就能用闪电五连鞭连抽五次啦！
-        mc = self._render_rich_chain_images(mc)
-        root = self.breakdown_r(mc)
-        
-        for i, e in enumerate(root):
-            if i != 0:
-                if isinstance(e, str):
-                    prev_e = e
-                    e = re.sub(r'(^[\s，,。]+)|([\s]+$)', '', e)
-
-                    if len(e) == 0:
-                        continue
-
-                    await asyncio.sleep(min(0.2 + len(e) / 7, 3))
-
-                    if len(prev_e) != len(e):
-                        await asyncio.sleep(1)
-                else:
-                    await asyncio.sleep(1 + random.random())
-            resp = await op.send([e])
-            # resp = await self.bot.send_group_message(group_id, [e])
-            self.ai_resp_msg_ids.append(resp.message_id)
+        await self.send_chat_segments(op, mc=mc)
     
     def is_chat_seq_msg(self, msg_id: int):
         return msg_id in self.ai_resp_msg_ids

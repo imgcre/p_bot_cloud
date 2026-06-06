@@ -4,7 +4,7 @@ import uuid
 import configs.config as config
 from event_types import ViolationEvent
 from mirai import At, Image, Plain, GroupMessage, MessageChain, MessageEvent, Voice
-from plugin import Context, Inject, Plugin, autorun, delegate, instr, fall_instr, nudge_instr, recall_instr, top_instr, InstrAttr, route
+from plugin import Context, Inject, Plugin, PlaceholderEvent, autorun, delegate, instr, fall_instr, nudge_instr, recall_instr, top_instr, InstrAttr, route
 from mirai.models.message import Quote, MarketFace, ShortVideo
 from mirai.models.events import NudgeEvent, Event, GroupRecallEvent
 from mirai.models.entities import Group, GroupMember
@@ -47,7 +47,7 @@ os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:4780'
 
 from typing import TYPE_CHECKING
 
-from utilities import AchvRarity, breakdown_chain_sync, get_logger, handler
+from utilities import AchvRarity, Source, SourceOp, breakdown_chain_sync, get_logger, handler
 if TYPE_CHECKING:
     from plugins.rest import Rest
     from plugins.check_in import CheckIn
@@ -74,6 +74,8 @@ DEFAULT_INITIATIVE_TALK_ACTIVE_WINDOW = 5 * 60
 DEFAULT_INITIATIVE_TALK_COOLDOWN = 60 * 60
 DEFAULT_INITIATIVE_TALK_MIN_MEMBER_MESSAGES = 3
 DEFAULT_INITIATIVE_TALK_PROBABILITY = 0.15
+AI_MSG_BREAK = '<<PBOT_MSG_BREAK>>'
+MAX_AI_MESSAGE_CHARS = 500
 
 @route('gpt')
 class Gpt(Plugin):
@@ -271,7 +273,7 @@ class Gpt(Plugin):
         return await asyncio.gather(*[map_comp(c) for c in chain])
 
     @delegate()
-    async def run(self, event: Event, member: GroupMember, *, chain: MessageChain, ob_mode=False):
+    async def run(self, event: Event, member: GroupMember, *, chain: MessageChain, ob_mode=False, stream_op: Optional[SourceOp]=None):
         if chain is not None:
             chain = await self.preprocess_chain(chain)
         history = self.chat_ctx.get_history_from_event(event)
@@ -312,6 +314,9 @@ class Gpt(Plugin):
             if should_return:
                 return
             
+            if stream_op is not None:
+                await self.chat_and_send_stream(history, stream_op)
+                return
             return await self.chat(history)
 
         elif isinstance(event, NudgeEvent):
@@ -362,9 +367,12 @@ class Gpt(Plugin):
                 '扔出了回旋镖',
             ]
             await history.append_system_msg(f'事件："{who}"{random.choice(actions)}，请富有文采地表达你的愉悦，本次输出请尽量简短，字数最好30字以内，请提及与你互动的群友的名字(即"{who}")，以及生动描述被互动的部位的状态，输出中坚决不可以出现\"谢谢\"、\"软软的\"、\"舒服\"等词语')
+            if stream_op is not None:
+                await self.chat_and_send_stream(history, stream_op, limited_history=True)
+                return
             return await self.chat(history, limited_history=True)
 
-    async def create_talk(self, history: 'History', *, limited_history=False):
+    def _build_talk_contents(self, raw_history: list):
         def mapper(msg):
             return {
                 'role': {
@@ -391,40 +399,47 @@ class Gpt(Plugin):
                 *combined, next_ele
             ]
 
+        return functools.reduce(reducer, map(mapper, raw_history), [])
+
+    async def _generate_content_async(self, history: 'History', *, limited_history=False, stream=False):
+        return await model.generate_content_async(
+            self._build_talk_contents(await history.merged(limited_history=limited_history)),
+            safety_settings=[
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+            ],
+            stream=stream,
+            # tools=[Tool([
+            #     {
+            #         'name': 'increase_affection',
+            #         'description': '增加bot对当前群友的好感度',
+            #         'parameters': {
+            #             'type_': 'OBJECT',
+            #             'properties': {
+            #                 'val': {'type_': 'NUMBER'},
+            #              },
+            #              'required': ['val']
+            #         }
+            #     },
+            #     {
+            #         'name': 'decrease_affection',
+            #         'description': '降低bot对当前群友的好感度',
+            #         'parameters': {
+            #             'type_': 'OBJECT',
+            #             'properties': {
+            #                 'val': {'type_': 'NUMBER'},
+            #              },
+            #              'required': ['val']
+            #         }
+            #     }
+            # ])],
+        )
+
+    async def create_talk(self, history: 'History', *, limited_history=False):
         while True:
-            resp = (await model.generate_content_async(
-                functools.reduce(reducer, map(mapper, await history.merged(limited_history=limited_history)), []), 
-                safety_settings=[ 
-                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, 
-                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, 
-                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, 
-                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-                ],
-                # tools=[Tool([
-                #     {
-                #         'name': 'increase_affection',
-                #         'description': '增加bot对当前群友的好感度',
-                #         'parameters': {
-                #             'type_': 'OBJECT',
-                #             'properties': {
-                #                 'val': {'type_': 'NUMBER'},
-                #              },
-                #              'required': ['val']
-                #         }
-                #     },
-                #     {
-                #         'name': 'decrease_affection',
-                #         'description': '降低bot对当前群友的好感度',
-                #         'parameters': {
-                #             'type_': 'OBJECT',
-                #             'properties': {
-                #                 'val': {'type_': 'NUMBER'},
-                #              },
-                #              'required': ['val']
-                #         }
-                #     }
-                # ])],
-            ))
+            resp = (await self._generate_content_async(history, limited_history=limited_history))
             # logger.debug(f'{resp=}')
 
             if 'function_call' in resp.candidates[0].content.parts[0]:
@@ -469,7 +484,7 @@ class Gpt(Plugin):
         }
 
     @delegate()
-    async def response_with_ai(self, event: MessageEvent, *, msg: List[MessageComponent]):
+    async def response_with_ai(self, event: MessageEvent, op: SourceOp, *, msg: List[MessageComponent]):
         history = self.chat_ctx.get_history_from_event(event)
         who = self.member_man.get_name_from_id(event.sender.id, await self.achv.get_raw_member_name())
         try:
@@ -481,12 +496,180 @@ class Gpt(Plugin):
                 return c
             text = "".join([map_text(m) for m in msg])
             await history.append_system_msg(f'请按照你的设定的说话方式向{who}说以下内容【{text}】, 请复述:')
-            resp = await self.chat(history)
-            await self.ai_ext.as_chat_seq(mc=resp)
+            await self.chat_and_send_stream(history, op)
             return
         except:
             ...
         return [f'{who}{"".join(msg)}~']
+
+    def _contains_forbidden_system_text(self, say: str):
+        return any([c in say for c in ['{bot}', '{system}', '在群里说:']])
+
+    def _strip_trailing_partial_break(self, text: str):
+        max_prefix_len = min(len(text), len(AI_MSG_BREAK) - 1)
+        for n in range(max_prefix_len, 0, -1):
+            if AI_MSG_BREAK.startswith(text[-n:]):
+                return text[:-n], text[-n:]
+        return text, ''
+
+    def _take_stream_segments(self, buffer: str):
+        segments = []
+        while AI_MSG_BREAK in buffer:
+            segment, buffer = buffer.split(AI_MSG_BREAK, 1)
+            if segment.strip():
+                segments.append(segment)
+        return segments, buffer
+
+    def _take_fallback_segment(self, buffer: str):
+        if len(buffer) <= MAX_AI_MESSAGE_CHARS:
+            return None, buffer
+
+        candidates = ['\n', '。', '！', '？', '!', '?', '，', ',', '、', ' ']
+        split_at = None
+        for sep in candidates:
+            idx = buffer.rfind(sep, 0, MAX_AI_MESSAGE_CHARS + 1)
+            if idx > 0:
+                split_at = idx + len(sep)
+                break
+        if split_at is None:
+            split_at = MAX_AI_MESSAGE_CHARS
+        return buffer[:split_at], buffer[split_at:]
+
+    async def _postprocess_ai_text(self, say: str):
+        code_blocks = []
+
+        def stash_code_block(m: re.Match):
+            code_blocks.append(m.group(0))
+            return f'@@PBOT_CODE_BLOCK_{len(code_blocks) - 1}@@'
+
+        say = re.sub(r'```[^\n`]*\n?.*?```', stash_code_block, say, flags=re.DOTALL)
+
+        async def motion_op(s, ctx):
+            if 'image-append' in ctx:
+                return
+            img_paths = glob.glob(self.path.data[Dir.motions].of_file(f'{s}.*'))
+            if len(img_paths) > 0: # and random.random() < 0.8
+                ctx['image-append'] = True
+                return Image(path=img_paths[0])
+            # return f'[未知表情:{s}]'
+        ctx = {}
+        chain = await self.breakdown_chain(say, r'\[表情:(.*?)\]', motion_op, ctx)
+        chain = await self.breakdown_chain(chain, r'\[([^:]*?)\]', motion_op, ctx)
+
+        async def instrction_op(s, ctx):
+            if s == '睡眠':
+                return await self.rest.go_to_sleep()
+            if s == '签到':
+                return await self.check_in.do_check_in()
+        chain = await self.breakdown_chain(chain, r'\[指令:(.*?)\]', instrction_op)
+
+        async def no_op(s, ctx):
+            ...
+        chain = await self.breakdown_chain(chain, r'\[(.*?)\]', no_op)
+
+        if code_blocks:
+            for idx, code_block in enumerate(code_blocks):
+                placeholder = f'@@PBOT_CODE_BLOCK_{idx}@@'
+                chain = [
+                    comp.replace(placeholder, code_block) if isinstance(comp, str) else comp
+                    for comp in chain
+                ]
+
+        return chain
+
+    async def _send_ai_segment(self, op: SourceOp, segment: str, sent_msg_ids: list):
+        chain = await self._postprocess_ai_text(segment)
+        chain = self.ai_ext.render_rich_chain_images(chain)
+        if len(chain) == 0:
+            return
+        resp = await op.send(chain)
+        sent_msg_ids.append(resp.message_id)
+        self.ai_ext.ai_resp_msg_ids.append(resp.message_id)
+
+    async def _stream_talk_text(self, history: 'History', *, limited_history=False):
+        response = await self._generate_content_async(history, limited_history=limited_history, stream=True)
+        full_text = ''
+        async for chunk in response:
+            try:
+                text = chunk.text
+            except ValueError:
+                text = ''
+            if not text:
+                continue
+            full_text += text
+            yield text, full_text
+        await response.resolve()
+
+    async def chat_and_send_stream(self, history: 'History', op: SourceOp, *, limited_history=False):
+        try_count = 4
+
+        while try_count > 0:
+            buffer = ''
+            pending_break_prefix = ''
+            say = ''
+            sent_msg_ids = []
+            comm_failed = False
+            invalid_response = False
+            logger.debug('[发起gpt流式请求]')
+
+            try:
+                async for chunk_text, say in self._stream_talk_text(history, limited_history=limited_history):
+                    buffer += chunk_text
+                    safe_buffer, pending_break_prefix = self._strip_trailing_partial_break(buffer)
+
+                    if self._contains_forbidden_system_text(say):
+                        logger.debug('[流式检测到在模拟系统消息, 重试中]')
+                        invalid_response = True
+                        break
+
+                    segments, buffer = self._take_stream_segments(safe_buffer)
+                    buffer = buffer + pending_break_prefix
+                    pending_break_prefix = ''
+
+                    for segment in segments:
+                        await self._send_ai_segment(op, segment, sent_msg_ids)
+
+                    fallback_segment, buffer = self._take_fallback_segment(buffer)
+                    if fallback_segment is not None:
+                        logger.debug('[流式回复触发字数兜底断句]')
+                        await self._send_ai_segment(op, fallback_segment, sent_msg_ids)
+                logger.debug('[结束gpt流式请求]')
+            except:
+                traceback.print_exc()
+                comm_failed = True
+
+            buffer += pending_break_prefix
+            if sent_msg_ids:
+                if not comm_failed and not invalid_response and buffer.strip():
+                    await self._send_ai_segment(op, buffer, sent_msg_ids)
+                history.update_last_chat_tsc()
+                await history.append({'role': 'assistant', 'content': say})
+                return sent_msg_ids
+
+            if comm_failed:
+                logger.debug('[gpt流式请求发生错误]')
+                try_count -= 1
+                continue
+
+            if invalid_response:
+                await history.append_system_msg(f'请勿输出或模拟系统消息！')
+                try_count -= 1
+                continue
+
+            if self._contains_forbidden_system_text(say):
+                logger.debug('[检测到在模拟系统消息, 重试中]')
+                await history.append_system_msg(f'请勿输出或模拟系统消息！')
+                try_count -= 1
+                continue
+
+            if buffer.strip():
+                await self._send_ai_segment(op, buffer, sent_msg_ids)
+                history.update_last_chat_tsc()
+                await history.append({'role': 'assistant', 'content': say})
+                return sent_msg_ids
+
+            try_count -= 1
+        return []
 
     async def chat(self, history: 'History', *, limited_history=False):
         try_count = 4
@@ -517,61 +700,15 @@ class Gpt(Plugin):
             logger.debug(f'bot -> {say}')
             # self.append_system_msg(f'bot在群里说:')
             
-            if any([c in say for c in ['{bot}', '{system}', '在群里说:']]): 
+            if self._contains_forbidden_system_text(say):
                 logger.debug('[检测到在模拟系统消息, 重试中]')
                 await history.append_system_msg(f'请勿输出或模拟系统消息！')
                 try_count -= 1
                 continue
             await history.append(msg)
-            if len(say) > 500:
-                logger.debug('[字数超出限制, 重试中]')
-                if try_count > 1:
-                    await history.append_system_msg(f'你的回复字数过多, 请精简后重新回复, 字数最好控制在100字以内')
-                else:
-                    await history.append_system_msg(f'你的回复字数过多, 且即将超过重试次数，请向群友表达自己无法精简回复内容的歉意')
-                try_count -= 1
-                continue
             history.update_last_chat_tsc()
 
-            code_blocks = []
-
-            def stash_code_block(m: re.Match):
-                code_blocks.append(m.group(0))
-                return f'@@PBOT_CODE_BLOCK_{len(code_blocks) - 1}@@'
-
-            say = re.sub(r'```[^\n`]*\n?.*?```', stash_code_block, say, flags=re.DOTALL)
-
-            async def motion_op(s, ctx):
-                if 'image-append' in ctx:
-                    return
-                img_paths = glob.glob(self.path.data[Dir.motions].of_file(f'{s}.*'))
-                if len(img_paths) > 0: # and random.random() < 0.8
-                    ctx['image-append'] = True
-                    return Image(path=img_paths[0])
-                # return f'[未知表情:{s}]'
-            ctx = {}
-            chain = await self.breakdown_chain(say, r'\[表情:(.*?)\]', motion_op, ctx)
-            chain = await self.breakdown_chain(chain, r'\[([^:]*?)\]', motion_op, ctx)
-
-            async def instrction_op(s, ctx):
-                if s == '睡眠':
-                    return await self.rest.go_to_sleep()
-                if s == '签到':
-                    return await self.check_in.do_check_in()
-            chain = await self.breakdown_chain(chain, r'\[指令:(.*?)\]', instrction_op)
-
-            async def no_op(s, ctx):
-                ...
-            chain = await self.breakdown_chain(chain, r'\[(.*?)\]', no_op)
-
-            if code_blocks:
-                for idx, code_block in enumerate(code_blocks):
-                    placeholder = f'@@PBOT_CODE_BLOCK_{idx}@@'
-                    chain = [
-                        comp.replace(placeholder, code_block) if isinstance(comp, str) else comp
-                        for comp in chain
-                    ]
-
+            chain = await self._postprocess_ai_text(say)
             logger.debug(chain)
             return chain
         ...
@@ -664,10 +801,9 @@ class Gpt(Plugin):
             for _ in range(5):
                 retry_origin_len = len(history.origin)
                 try:
-                    content = await self.chat(history)
                     group = await self.bot.get_group(history.id)
-                    async with self.override(group):
-                        await self.ai_ext.as_chat_seq(mc=content)
+                    source = Source(event=PlaceholderEvent(type='PlaceholderEvent'), group=group, member=None)
+                    await self.chat_and_send_stream(history, SourceOp(self.bot, source))
                     history.member_speaking_times_during_last_initiative_talk = 0
                     success = True
                     await history._update_log_file()
@@ -754,7 +890,7 @@ class Gpt(Plugin):
     #     return [f'{who}{"".join(msg)}~']
 
     @delegate()
-    async def enhanced_run(self, *, comps: Optional[list[MessageComponent]]=None, recall: bool=False):
+    async def enhanced_run(self, op: SourceOp, *, comps: Optional[list[MessageComponent]]=None, recall: bool=False):
         if comps is not None:
             txt_len = 0
             will_exit = False
@@ -778,8 +914,9 @@ class Gpt(Plugin):
         
         if not await self.ai_ext.check_avaliable(recall=recall): return
 
-        resp = await self.run(chain=MessageChain(comps) if comps is not None else None)
-        await self.ai_ext.as_chat_seq(mc=resp)
+        resp = await self.run(chain=MessageChain(comps) if comps is not None else None, stream_op=op)
+        if resp is not None:
+            await self.ai_ext.as_chat_seq(mc=resp)
         await self.ai_ext.mark_invoked()
 
     @top_instr('ai|狸花|bot', InstrAttr.NO_ALERT_CALLER)
