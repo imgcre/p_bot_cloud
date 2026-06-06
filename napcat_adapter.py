@@ -301,6 +301,10 @@ class NapCatBot:
         logger.debug("napcat event scheduled %s pending_event_tasks=%d", self._event_summary(event), len(self._event_tasks))
 
     async def _emit(self, event: Any) -> None:
+        try:
+            await self._hydrate_event_quotes(event)
+        except Exception:
+            logger.warning("napcat event quote hydration failed %s", self._event_summary(event), exc_info=True)
         for event_type, handler in list(self._handlers):
             if isinstance(event, event_type):
                 await handler(event)
@@ -944,6 +948,55 @@ class NapCatBot:
             return GroupMessage(sender=sender, messageChain=chain)
         return FriendMessage(sender=Friend(id=sender_id), messageChain=chain)
 
+    async def _hydrate_event_quotes(self, event: Any) -> None:
+        if not isinstance(event, MessageEvent):
+            return
+        chain = getattr(event, "message_chain", None)
+        if chain is None:
+            return
+
+        group_id = None
+        if isinstance(event, GroupMessage):
+            group_id = event.group.id
+        elif isinstance(event, TempMessage):
+            group_id = event.group.id
+
+        quoted_events: dict[int, MessageEvent] = {}
+        for comp in chain:
+            if not isinstance(comp, Quote) or comp.id is None or comp.id <= 0:
+                continue
+            quoted_event = quoted_events.get(comp.id)
+            if quoted_event is None:
+                try:
+                    quoted_event = (await self.message_from_id(comp.id, group_id)).data
+                except Exception:
+                    logger.warning(
+                        "napcat quote lookup failed message_id=%s group_id=%s",
+                        comp.id,
+                        group_id,
+                        exc_info=True,
+                    )
+                    continue
+                quoted_events[comp.id] = quoted_event
+            self._apply_quoted_event_to_quote(comp, quoted_event)
+
+    def _apply_quoted_event_to_quote(self, quote: Quote, event: MessageEvent) -> None:
+        sender = getattr(event, "sender", None)
+        if sender is not None:
+            quote.sender_id = int(sender.id)
+        chain = getattr(event, "message_chain", None)
+        if chain is not None:
+            quote.origin = chain
+        if isinstance(event, GroupMessage):
+            quote.group_id = event.group.id
+            quote.target_id = event.group.id
+        elif isinstance(event, TempMessage):
+            quote.group_id = event.group.id
+            quote.target_id = event.group.id
+        elif isinstance(event, FriendMessage):
+            quote.group_id = 0
+            quote.target_id = self.qq if quote.sender_id != self.qq else event.sender.id
+
     async def _notice_event_from_onebot(self, data: dict[str, Any]):
         notice_type = data.get("notice_type")
         group_id = data.get("group_id")
@@ -1052,12 +1105,22 @@ class NapCatBot:
             return Face(faceId=int(raw_id), name=data.get("name")) if raw_id is not None else None
         if typ == "reply":
             quoted_id = int(data.get("id", 0))
+            reply_group_id = self._int_or_none(data.get("group_id")) or group_id
+            reply_sender_id = (
+                self._int_or_none(data.get("qq"))
+                or self._int_or_none(data.get("user_id"))
+                or self._int_or_none(data.get("sender_id"))
+                or self._int_or_none(data.get("senderId"))
+            )
+            reply_origin = MessageChain([])
+            if data.get("text"):
+                reply_origin = MessageChain([Plain(str(data.get("text")))])
             return Quote(
                 id=quoted_id,
-                groupId=group_id,
-                senderId=sender_id,
-                targetId=self.qq,
-                origin=MessageChain([]),
+                groupId=reply_group_id,
+                senderId=reply_sender_id,
+                targetId=reply_group_id or self.qq,
+                origin=reply_origin,
             )
         if typ == "image":
             if data.get("emoji_id") or data.get("emoji_package_id"):
@@ -1155,6 +1218,15 @@ class NapCatBot:
         if timestamp <= 0:
             return 0
         return max(0, timestamp - int(time.time()))
+
+    @staticmethod
+    def _int_or_none(value: Any) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _is_request_approved(self, operate: RespOperate) -> bool:
         return operate == RespOperate.ALLOW or bool(getattr(operate, "value", 0) & RespOperate.ALLOW.value)

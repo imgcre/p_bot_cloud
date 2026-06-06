@@ -745,6 +745,9 @@ class Admin(Plugin, AchvCustomizer):
     @any_instr(InstrAttr.NO_ALERT_CALLER)
     async def proxy_execute(self, event: GroupMessage, quote: Quote, ctx: MessageContext):
         member_id = quote.sender_id
+        if member_id is None:
+            logger.warning("proxy_execute ignored quote without sender_id message_id=%s", quote.id)
+            return
 
         for c in event.message_chain:
             if isinstance(c, Plain):
@@ -765,6 +768,14 @@ class Admin(Plugin, AchvCustomizer):
                 await self.inc_violation_cnt(reason='操纵bot', hint='操纵bot')
 
             member = await self.member_from(member_id=member_id)
+            if member is None:
+                logger.warning(
+                    "proxy_execute ignored unresolved member group_id=%s member_id=%s quote_id=%s",
+                    event.group.id,
+                    member_id,
+                    quote.id,
+                )
+                return
             async with self.override(member, ProxyContext()):
                 await ctx.exec_cmd(chain)
 
