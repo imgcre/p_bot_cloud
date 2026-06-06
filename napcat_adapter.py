@@ -110,7 +110,8 @@ class NapCatBot:
         self._handlers: list[tuple[Type[Any], Handler]] = []
         self._pending: dict[str, asyncio.Future] = {}
         self._ws = None
-        self._connected = asyncio.Event()
+        self._ws_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._connected_events: dict[asyncio.AbstractEventLoop, asyncio.Event] = {}
         self._stopping = False
         self._background_tasks: list[asyncio.Task] = []
         self._event_tasks: set[asyncio.Task] = set()
@@ -132,6 +133,35 @@ class NapCatBot:
     def add_background_task(self, func=None):
         return self.asgi.add_background_task(func)
 
+    def _connected_event(self) -> asyncio.Event:
+        loop = asyncio.get_running_loop()
+        event = self._connected_events.get(loop)
+        if event is None:
+            event = asyncio.Event()
+            self._connected_events[loop] = event
+        if self._ws is None:
+            event.clear()
+        else:
+            event.set()
+        return event
+
+    def _publish_connected(self, connected: bool) -> None:
+        current_loop = asyncio.get_running_loop()
+        if connected:
+            self._ws_loop = current_loop
+        elif self._ws_loop is current_loop:
+            self._ws_loop = None
+
+        for loop, event in list(self._connected_events.items()):
+            if loop.is_closed():
+                self._connected_events.pop(loop, None)
+                continue
+            callback = event.set if connected else event.clear
+            if loop is current_loop:
+                callback()
+            else:
+                loop.call_soon_threadsafe(callback)
+
     async def startup(self) -> None:
         self._stopping = False
 
@@ -151,18 +181,19 @@ class NapCatBot:
                     headers["Authorization"] = f"Bearer {self.access_token}"
                 async with websockets.connect(self.ws_url, extra_headers=headers) as ws:
                     self._ws = ws
-                    self._connected.set()
+                    self._publish_connected(True)
                     async for raw in ws:
                         await self._handle_raw(raw)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self._connected.clear()
+                self._ws = None
+                self._publish_connected(False)
                 if not self._stopping:
                     await asyncio.sleep(self.reconnect_interval)
             finally:
-                self._connected.clear()
                 self._ws = None
+                self._publish_connected(False)
 
     def run(
         self,
@@ -237,7 +268,31 @@ class NapCatBot:
         *,
         response_cls: Type[ActionResponse] = ActionResponse,
     ) -> ActionResponse:
-        await self._connected.wait()
+        while True:
+            await self._connected_event().wait()
+            ws_loop = self._ws_loop
+            current_loop = asyncio.get_running_loop()
+            if self._ws is None or ws_loop is None:
+                self._connected_event().clear()
+                continue
+            if ws_loop is current_loop:
+                return await self._call_action_connected(action, params, response_cls=response_cls)
+            if ws_loop.is_closed() or not ws_loop.is_running():
+                self._connected_event().clear()
+                continue
+            future = asyncio.run_coroutine_threadsafe(
+                self._call_action_connected(action, params, response_cls=response_cls),
+                ws_loop,
+            )
+            return await asyncio.wrap_future(future)
+
+    async def _call_action_connected(
+        self,
+        action: str,
+        params: Optional[dict[str, Any]] = None,
+        *,
+        response_cls: Type[ActionResponse] = ActionResponse,
+    ) -> ActionResponse:
         if self._ws is None:
             raise RuntimeError("NapCat websocket is not connected")
         echo = uuid.uuid4().hex
