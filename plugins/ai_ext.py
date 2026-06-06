@@ -143,6 +143,7 @@ class AiExt(Plugin):
 
     def _get_code_font_name(self):
         font_names = [
+            'Sarasa Mono SC',
             'Noto Sans Mono CJK SC',
             'Noto Sans Mono CJK',
         ]
@@ -155,8 +156,8 @@ class AiExt(Plugin):
                 ...
 
         font_paths = [
-            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/local/share/fonts/sarasa/SarasaMonoSC-Regular.ttf',
+            '/usr/local/share/fonts/sarasa/SarasaMonoSC-Bold.ttf',
             '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf',
             '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
             r'C:\Windows\Fonts\NotoSansSC-VF.ttf',
