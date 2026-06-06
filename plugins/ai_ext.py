@@ -179,23 +179,103 @@ class AiExt(Plugin):
             body = body[1:-1].strip()
         return body
 
-    def _is_plain_math_text(self, body: str):
-        if not body:
-            return True
+    def _plainify_simple_math(self, body: str):
+        replacements = {
+            r'^{\circ}': '°',
+            r'^\circ': '°',
+            r'\triangle': 'Δ',
+            r'\Delta': 'Δ',
+            r'\angle': '∠',
+            r'\measuredangle': '∠',
+            r'\cdot': '⋅',
+            r'\times': '×',
+            r'\div': '÷',
+            r'\pm': '±',
+            r'\mp': '∓',
+            r'\parallel': '||',
+            r'\perp': '⊥',
+            r'\circ': '°',
+            r'\degree': '°',
+            r'\deg': '°',
+            r'\leq': '≤',
+            r'\le': '≤',
+            r'\geq': '≥',
+            r'\ge': '≥',
+            r'\neq': '≠',
+            r'\ne': '≠',
+            r'\approx': '≈',
+            r'\sim': '∼',
+            r'\cong': '≅',
+            r'\equiv': '≡',
+            r'\infty': '∞',
+            r'\alpha': 'α',
+            r'\beta': 'β',
+            r'\gamma': 'γ',
+            r'\delta': 'δ',
+            r'\epsilon': 'ε',
+            r'\theta': 'θ',
+            r'\lambda': 'λ',
+            r'\mu': 'μ',
+            r'\pi': 'π',
+            r'\rho': 'ρ',
+            r'\sigma': 'σ',
+            r'\phi': 'φ',
+            r'\omega': 'ω',
+            r'\Gamma': 'Γ',
+            r'\Theta': 'Θ',
+            r'\Lambda': 'Λ',
+            r'\Pi': 'Π',
+            r'\Sigma': 'Σ',
+            r'\Phi': 'Φ',
+            r'\Omega': 'Ω',
+        }
+        for source, target in replacements.items():
+            body = body.replace(source, target)
+
+        superscripts = {
+            '0': '⁰',
+            '1': '¹',
+            '2': '²',
+            '3': '³',
+            '4': '⁴',
+            '5': '⁵',
+            '6': '⁶',
+            '7': '⁷',
+            '8': '⁸',
+            '9': '⁹',
+            '+': '⁺',
+            '-': '⁻',
+        }
+        body = re.sub(r'\^\{([0-9+-])\}', lambda m: superscripts[m.group(1)], body)
+        body = re.sub(r'\^([0-9+-])', lambda m: superscripts[m.group(1)], body)
+        body = re.sub(r'\s+', ' ', body).strip()
+
         structural_pattern = re.compile(
             r'\\[a-zA-Z]+|[{}_^]|\\[()[\]]|\\begin|\\end|\\frac|\\sqrt|\\sum|\\int|\\prod|\\lim'
         )
-        return structural_pattern.search(body) is None
+        if structural_pattern.search(body):
+            return None
+        return body
+
+    def _normalize_mathtext(self, body: str):
+        replacements = {
+            r'\implies': r'\Rightarrow',
+        }
+        for source, target in replacements.items():
+            body = body.replace(source, target)
+        return body
 
     def _render_math_image(self, formula: str):
         body = self._get_math_body(formula)
 
         if not body:
             return formula
-        if self._is_plain_math_text(body):
-            return body
+        plain_body = self._plainify_simple_math(body)
+        if plain_body is not None:
+            return plain_body
+        body = self._normalize_mathtext(body)
 
-        key = ('math', 'v2-half-size', formula)
+        key = ('math', 'v2-half-size', body)
         cached = self._get_cached_rich_image(key)
         if cached is not None:
             return cached
