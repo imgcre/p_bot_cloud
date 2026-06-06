@@ -533,13 +533,13 @@ class Gpt(Plugin):
                 continue
             history.update_last_chat_tsc()
 
-            s = re.compile(r'```.*?```',re.DOTALL)
-            def repl(m: re.Match):
-                print(m)
-                return ''
+            code_blocks = []
 
-            say = s.sub(repl, say)
-            say = say.replace('```', '')
+            def stash_code_block(m: re.Match):
+                code_blocks.append(m.group(0))
+                return f'@@PBOT_CODE_BLOCK_{len(code_blocks) - 1}@@'
+
+            say = re.sub(r'```[^\n`]*\n?.*?```', stash_code_block, say, flags=re.DOTALL)
 
             async def motion_op(s, ctx):
                 if 'image-append' in ctx:
@@ -563,6 +563,14 @@ class Gpt(Plugin):
             async def no_op(s, ctx):
                 ...
             chain = await self.breakdown_chain(chain, r'\[(.*?)\]', no_op)
+
+            if code_blocks:
+                for idx, code_block in enumerate(code_blocks):
+                    placeholder = f'@@PBOT_CODE_BLOCK_{idx}@@'
+                    chain = [
+                        comp.replace(placeholder, code_block) if isinstance(comp, str) else comp
+                        for comp in chain
+                    ]
 
             logger.debug(chain)
             return chain

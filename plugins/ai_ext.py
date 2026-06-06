@@ -1,11 +1,14 @@
 import asyncio
+import base64
+from collections import OrderedDict
 from dataclasses import dataclass
 from decimal import Decimal
+from io import BytesIO
 import random
 import re
 from typing import Final,  Optional
 from event_types import EffectiveSpeechEvent
-from mirai import At, GroupMessage, MessageEvent, Plain
+from mirai import At, GroupMessage, Image, MessageEvent, Plain
 from plugin import Plugin, any_instr, delegate, InstrAttr, route, enable_backup, Inject
 from mirai.models.entities import GroupMember
 
@@ -54,9 +57,11 @@ class AiExt(Plugin):
 
     MIN_BREAKDOWN_PROB_WORDS: Final = 5
     MAX_BREAKDOWN_PROB_WORDS: Final = 30
+    RICH_IMAGE_CACHE_SIZE: Final = 64
 
     def __init__(self):
         self.ai_resp_msg_ids: list[int] = []
+        self.rich_image_cache = OrderedDict()
 
     @delegate()
     async def chat(self, event: GroupMessage, *, msg: list):
@@ -119,9 +124,139 @@ class AiExt(Plugin):
             
         return root
 
+    def _get_cached_rich_image(self, key):
+        b64_img = self.rich_image_cache.get(key)
+        if b64_img is None:
+            return None
+        self.rich_image_cache.move_to_end(key)
+        return Image(base64=b64_img)
+
+    def _put_cached_rich_image(self, key, b64_img):
+        self.rich_image_cache[key] = b64_img
+        self.rich_image_cache.move_to_end(key)
+        while len(self.rich_image_cache) > self.RICH_IMAGE_CACHE_SIZE:
+            self.rich_image_cache.popitem(last=False)
+        return Image(base64=b64_img)
+
+    def _render_code_image(self, code: str, lang: str = ''):
+        key = ('code', lang, code)
+        cached = self._get_cached_rich_image(key)
+        if cached is not None:
+            return cached
+
+        from pygments import highlight
+        from pygments.formatters import ImageFormatter
+        from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
+        from pygments.util import ClassNotFound
+
+        try:
+            lexer = get_lexer_by_name(lang.strip()) if lang.strip() else guess_lexer(code)
+        except ClassNotFound:
+            lexer = TextLexer()
+
+        formatter = ImageFormatter(
+            style='one-dark',
+            line_numbers=False,
+            font_size=28,
+            line_pad=6,
+            image_pad=24,
+        )
+        png_bytes = highlight(code.rstrip('\n') or ' ', lexer, formatter)
+        b64_img = base64.b64encode(png_bytes).decode('ascii')
+        return self._put_cached_rich_image(key, b64_img)
+
+    def _render_math_image(self, formula: str):
+        key = ('math', formula)
+        cached = self._get_cached_rich_image(key)
+        if cached is not None:
+            return cached
+
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        body = formula.strip()
+        if body.startswith('$$') and body.endswith('$$'):
+            body = body[2:-2].strip()
+        elif body.startswith(r'\[') and body.endswith(r'\]'):
+            body = body[2:-2].strip()
+        elif body.startswith(r'\(') and body.endswith(r'\)'):
+            body = body[2:-2].strip()
+        elif body.startswith('$') and body.endswith('$'):
+            body = body[1:-1].strip()
+
+        if not body:
+            return formula
+
+        fig = Figure(figsize=(0.01, 0.01), dpi=180)
+        fig.patch.set_facecolor('#282c34')
+        canvas = FigureCanvasAgg(fig)
+        text = fig.text(0, 0, f'${body}$', fontsize=30, color='#abb2bf')
+        canvas.draw()
+        bbox = text.get_window_extent(canvas.get_renderer()).expanded(1.08, 1.35)
+
+        buffered = BytesIO()
+        fig.savefig(
+            buffered,
+            format='png',
+            transparent=False,
+            facecolor=fig.get_facecolor(),
+            bbox_inches=bbox.transformed(fig.dpi_scale_trans.inverted()),
+            pad_inches=0.03,
+        )
+        b64_img = base64.b64encode(buffered.getvalue()).decode('ascii')
+        return self._put_cached_rich_image(key, b64_img)
+
+    def _split_math_images(self, text: str):
+        math_pattern = re.compile(
+            r'(\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|(?<!\\)\$(?!\$).+?(?<!\\)\$)',
+            re.DOTALL,
+        )
+        parts = []
+        last = 0
+        for match in math_pattern.finditer(text):
+            if match.start() > last:
+                parts.append(text[last:match.start()])
+            formula = match.group(0)
+            try:
+                parts.append(self._render_math_image(formula))
+            except Exception:
+                parts.append(formula)
+            last = match.end()
+        if last < len(text):
+            parts.append(text[last:])
+        return parts
+
+    def _render_rich_text_images(self, text: str):
+        code_pattern = re.compile(r'```([^\n`]*)\n?(.*?)```', re.DOTALL)
+        parts = []
+        last = 0
+        for match in code_pattern.finditer(text):
+            if match.start() > last:
+                parts.extend(self._split_math_images(text[last:match.start()]))
+            lang = match.group(1).strip()
+            code = match.group(2)
+            try:
+                parts.append(self._render_code_image(code, lang))
+            except Exception:
+                parts.append(match.group(0))
+            last = match.end()
+        if last < len(text):
+            parts.extend(self._split_math_images(text[last:]))
+        return [p for p in parts if not isinstance(p, str) or len(p) > 0]
+
+    def _render_rich_chain_images(self, mc: list):
+        rendered = []
+        for e in mc:
+            if isinstance(e, str):
+                rendered.extend(self._render_rich_text_images(e))
+            else:
+                rendered.append(e)
+        return rendered
+
     @delegate(InstrAttr.BACKGROUND)
     async def as_chat_seq(self, op: SourceOp, *, mc: list):
         # 咱也一样... 不过没关系，咱可以攒着下次用嘛~ 下次就能用闪电五连鞭连抽五次啦！
+        mc = self._render_rich_chain_images(mc)
         root = self.breakdown_r(mc)
         
         for i, e in enumerate(root):

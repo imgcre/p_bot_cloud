@@ -2412,11 +2412,13 @@ dependencies = [
     { name = "imageio" },
     { name = "inflection" },
     { name = "mako" },
+    { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "matplotlib", version = "3.10.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "nest-asyncio" },
     { name = "py-mini-racer" },
     { name = "pychorus" },
     { name = "pydub" },
-    { name = "pyncm-async" },
+    { name = "pygments" },
     { name = "pypinyin" },
     { name = "pyzbar" },
     { name = "uvicorn" },
@@ -2444,11 +2446,12 @@ requires-dist = [
     { name = "imageio", specifier = "==2.12.0" },
     { name = "inflection", specifier = "==0.5.1" },
     { name = "mako", specifier = "==1.1.5" },
+    { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "nest-asyncio", specifier = "==1.5.7" },
     { name = "py-mini-racer", specifier = "==0.6.0" },
     { name = "pychorus", specifier = "==0.1" },
     { name = "pydub", specifier = "==0.25.1" },
-    { name = "pyncm-async", specifier = "==0.1.2" },
+    { name = "pygments", specifier = ">=2.19.2" },
     { name = "pypinyin", extras = ["phrase"], specifier = ">=0.55.0" },
     { name = "pyzbar", specifier = "==0.1.8" },
     { name = "uvicorn", specifier = ">=0.35.0" },
@@ -2721,15 +2724,12 @@ wheels = [
 ]
 
 [[package]]
-name = "pyncm-async"
-version = "0.1.2"
+name = "pygments"
+version = "2.20.0"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/15/25/b90bb0ecf59317c8c28ae8e8721155f3d1be381323219a2caa7ee3d1fabf/pyncm_async-0.1.2.tar.gz", hash = "sha256:e14f032a5b28daa558c31501f9b514989e553a8ee28b86ef2b03e9cbc48be300", size = 30447, upload-time = "2024-09-23T00:50:48.271Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/10/23654f414e0ed4e8f08c2fd03e123ac1e99771dad6d540abce1aeffd6c19/pyncm_async-0.1.2-py3-none-any.whl", hash = "sha256:377f1f323b67f11bdbe5e2121cd55213706feffb675bc2a2ee624fcad969c865", size = 36602, upload-time = "2024-09-23T00:50:46.766Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
 ]
 
 [[package]]
