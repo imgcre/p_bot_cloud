@@ -168,7 +168,7 @@ class AiExt(Plugin):
         return self._put_cached_rich_image(key, b64_img)
 
     def _render_math_image(self, formula: str):
-        key = ('math', formula)
+        key = ('math', 'v2-half-size', formula)
         cached = self._get_cached_rich_image(key)
         if cached is not None:
             return cached
@@ -192,7 +192,7 @@ class AiExt(Plugin):
         fig = Figure(figsize=(0.01, 0.01), dpi=180)
         fig.patch.set_facecolor('#282c34')
         canvas = FigureCanvasAgg(fig)
-        text = fig.text(0, 0, f'${body}$', fontsize=30, color='#abb2bf')
+        text = fig.text(0, 0, f'${body}$', fontsize=15, color='#abb2bf')
         canvas.draw()
         bbox = text.get_window_extent(canvas.get_renderer()).expanded(1.08, 1.35)
 
@@ -203,7 +203,7 @@ class AiExt(Plugin):
             transparent=False,
             facecolor=fig.get_facecolor(),
             bbox_inches=bbox.transformed(fig.dpi_scale_trans.inverted()),
-            pad_inches=0.03,
+            pad_inches=0.015,
         )
         b64_img = base64.b64encode(buffered.getvalue()).decode('ascii')
         return self._put_cached_rich_image(key, b64_img)
