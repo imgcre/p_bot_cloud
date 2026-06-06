@@ -261,6 +261,8 @@ class AiExt(Plugin):
     def _normalize_mathtext(self, body: str):
         replacements = {
             r'\implies': r'\Rightarrow',
+            r'\ge': r'\geq',
+            r'\le': r'\leq',
         }
         for source, target in replacements.items():
             body = body.replace(source, target)
