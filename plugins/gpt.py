@@ -15,7 +15,6 @@ import time
 import inspect
 from typing import Callable, Dict, List, Optional
 from enum import Enum
-import math
 from mirai.models.message import MessageComponent
 import aiohttp
 from asyncify import asyncify
@@ -68,6 +67,13 @@ model = genai.GenerativeModel('gemini-3.5-flash')
 class Dir(Enum):
     motions = auto()
     logs = auto()
+
+DEFAULT_INITIATIVE_TALK_ENABLED = True
+DEFAULT_INITIATIVE_TALK_CHECK_INTERVAL = 30
+DEFAULT_INITIATIVE_TALK_ACTIVE_WINDOW = 5 * 60
+DEFAULT_INITIATIVE_TALK_COOLDOWN = 60 * 60
+DEFAULT_INITIATIVE_TALK_MIN_MEMBER_MESSAGES = 3
+DEFAULT_INITIATIVE_TALK_PROBABILITY = 0.15
 
 @route('gpt')
 class Gpt(Plugin):
@@ -589,46 +595,86 @@ class Gpt(Plugin):
                         new_chain.append(s)
         return new_chain
 
-    # @autorun
+    @autorun
     async def initiative_talk(self, ctx: Context):
         while True:
-            await asyncio.sleep(1)
+            await asyncio.sleep(getattr(
+                config,
+                'GPT_INITIATIVE_TALK_CHECK_INTERVAL',
+                DEFAULT_INITIATIVE_TALK_CHECK_INTERVAL,
+            ))
+            if not getattr(config, 'GPT_INITIATIVE_TALK_ENABLED', DEFAULT_INITIATIVE_TALK_ENABLED):
+                continue
             with ctx:
-                tasks = []
-                h = self.chat_ctx.groups.get(139825481, None)
-                hs = [h] if h is not None else []
-                # for history in self.chat_ctx.groups.values():
-                for history in hs:
-                    async def fn():
-                        prob = (
-                            math.log10(1 + history.member_speaking_times_during_last_initiative_talk) 
-                            * 1 / (60 * 60) # 平均半小时说一句话
-                        )
-                        if (time.time() - history.member_last_speak_tsc) > 5 * 60:
-                            prob = 0
-                        history.set_initiative_talk_prob(prob)
-                        history.set_last_initiative_talk_prob_update_tsc(time.time())
-                        await history._update_log_file()
-                        # with open(os.path.join(RESOURCE_PATH, 'prob.log'), 'wt', encoding='utf-8') as f:
-                        #     f.write(f'prob: {prob}')
-                        if random.uniform(0, 1) < prob:
-                            logger.info(f'主动发言: {history.id}')
-                            await history.append_system_msg(f'bot主动发言, 请考虑所有聊天记录进行发言(不一定要回复最后一条消息), 请勿使用第二人称称谓')
-                            for _ in range(5):
-                                try:
-                                    content = await self.chat(history)
-                                    history.member_speaking_times_during_last_initiative_talk = 0
-                                    group = await self.bot.get_group(history.id)
-                                    async with self.override(group):
-                                        await self.ai_ext.as_chat_seq(mc=content)
-                                    break
-                                except Exception as e:
-                                    logger.info(f'主动发言: {e}')
-                            else:
-                                await history.pop()
-                            logger.info(f'主动发言完成: {history.id}')
-                    tasks.append(fn())
+                tasks = [
+                    self.try_initiative_talk(history)
+                    for history in list(self.chat_ctx.groups.values())
+                ]
                 await asyncio.gather(*tasks)
+
+    async def try_initiative_talk(self, history: 'GroupHistory'):
+        now = time.time()
+        prob = 0
+        last_initiative_talk_tsc = getattr(history, 'last_initiative_talk_tsc', 0)
+
+        if (
+            history.member_speaking_times_during_last_initiative_talk >= getattr(
+                config,
+                'GPT_INITIATIVE_TALK_MIN_MEMBER_MESSAGES',
+                DEFAULT_INITIATIVE_TALK_MIN_MEMBER_MESSAGES,
+            )
+            and now - history.member_last_speak_tsc <= getattr(
+                config,
+                'GPT_INITIATIVE_TALK_ACTIVE_WINDOW',
+                DEFAULT_INITIATIVE_TALK_ACTIVE_WINDOW,
+            )
+            and now - last_initiative_talk_tsc >= getattr(
+                config,
+                'GPT_INITIATIVE_TALK_COOLDOWN',
+                DEFAULT_INITIATIVE_TALK_COOLDOWN,
+            )
+        ):
+            prob = getattr(
+                config,
+                'GPT_INITIATIVE_TALK_PROBABILITY',
+                DEFAULT_INITIATIVE_TALK_PROBABILITY,
+            )
+
+        history.set_initiative_talk_prob(prob)
+        history.set_last_initiative_talk_prob_update_tsc(now)
+        await history._update_log_file()
+
+        if prob <= 0 or random.random() >= prob:
+            return
+
+        logger.info(f'主动发言: {history.id}')
+        origin_len = len(history.origin)
+        success = False
+        history.update_last_initiative_talk_tsc()
+        await history.append_system_msg('bot主动发言, 请考虑所有聊天记录进行发言(不一定要回复最后一条消息), 请勿使用第二人称称谓')
+        try:
+            for _ in range(5):
+                retry_origin_len = len(history.origin)
+                try:
+                    content = await self.chat(history)
+                    group = await self.bot.get_group(history.id)
+                    async with self.override(group):
+                        await self.ai_ext.as_chat_seq(mc=content)
+                    history.member_speaking_times_during_last_initiative_talk = 0
+                    success = True
+                    await history._update_log_file()
+                    logger.info(f'主动发言完成: {history.id}')
+                    return
+                except Exception as e:
+                    if len(history.origin) > retry_origin_len:
+                        history.origin = history.origin[:retry_origin_len]
+                        await history._update_log_file()
+                    logger.info(f'主动发言: {e}')
+        finally:
+            if not success:
+                history.origin = history.origin[:origin_len]
+                await history._update_log_file()
+        logger.info(f'主动发言失败: {history.id}')
 
     @autorun
     async def update_news(self):
@@ -736,8 +782,14 @@ class Gpt(Plugin):
     @fall_instr()
     async def chat_instr(self, event: MessageEvent, *comps: MessageComponent):
         ob_mode = True
-        if isinstance(event, GroupMessage): 
+        if isinstance(event, GroupMessage):
             history = self.chat_ctx.get_history_from_event(event)
+            if time.time() - history.member_last_speak_tsc > getattr(
+                config,
+                'GPT_INITIATIVE_TALK_ACTIVE_WINDOW',
+                DEFAULT_INITIATIVE_TALK_ACTIVE_WINDOW,
+            ):
+                history.member_speaking_times_during_last_initiative_talk = 0
             history.member_speaking_times_during_last_initiative_talk += 1
             history.update_member_last_speak_tsc()
             for c in event.message_chain:
@@ -889,18 +941,23 @@ class FriendHistory(History):
 class GroupHistory(History):
     member_speaking_times_during_last_initiative_talk: int
     member_last_speak_tsc: int
+    last_initiative_talk_tsc: float
     initiative_talk_prob: float
     last_initiative_talk_prob_update_tsc: float
 
     def __init__(self, ctx: 'ChatContextMan', id: int) -> None:
         self.member_speaking_times_during_last_initiative_talk = 0
         self.member_last_speak_tsc = 0
+        self.last_initiative_talk_tsc = 0
         self.initiative_talk_prob = 0
         self.last_initiative_talk_prob_update_tsc = 0
         super().__init__(ctx, id)
 
     def update_member_last_speak_tsc(self):
         self.member_last_speak_tsc = time.time()
+
+    def update_last_initiative_talk_tsc(self):
+        self.last_initiative_talk_tsc = time.time()
 
     def set_initiative_talk_prob(self, val: float):
         self.initiative_talk_prob = val
@@ -918,6 +975,7 @@ class GroupHistory(History):
         return {
             **await super()._get_log_content(),
             'mstdlit': self.member_speaking_times_during_last_initiative_talk,
+            'littsc': self.last_initiative_talk_tsc,
             'itprob': self.initiative_talk_prob,
             'litptsc': self.last_initiative_talk_prob_update_tsc
         }
