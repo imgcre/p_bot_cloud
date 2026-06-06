@@ -167,15 +167,7 @@ class AiExt(Plugin):
         b64_img = base64.b64encode(png_bytes).decode('ascii')
         return self._put_cached_rich_image(key, b64_img)
 
-    def _render_math_image(self, formula: str):
-        key = ('math', 'v2-half-size', formula)
-        cached = self._get_cached_rich_image(key)
-        if cached is not None:
-            return cached
-
-        from matplotlib.backends.backend_agg import FigureCanvasAgg
-        from matplotlib.figure import Figure
-
+    def _get_math_body(self, formula: str):
         body = formula.strip()
         if body.startswith('$$') and body.endswith('$$'):
             body = body[2:-2].strip()
@@ -185,9 +177,31 @@ class AiExt(Plugin):
             body = body[2:-2].strip()
         elif body.startswith('$') and body.endswith('$'):
             body = body[1:-1].strip()
+        return body
+
+    def _is_plain_math_text(self, body: str):
+        if not body:
+            return True
+        structural_pattern = re.compile(
+            r'\\[a-zA-Z]+|[{}_^]|\\[()[\]]|\\begin|\\end|\\frac|\\sqrt|\\sum|\\int|\\prod|\\lim'
+        )
+        return structural_pattern.search(body) is None
+
+    def _render_math_image(self, formula: str):
+        body = self._get_math_body(formula)
 
         if not body:
             return formula
+        if self._is_plain_math_text(body):
+            return body
+
+        key = ('math', 'v2-half-size', formula)
+        cached = self._get_cached_rich_image(key)
+        if cached is not None:
+            return cached
+
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
 
         fig = Figure(figsize=(0.01, 0.01), dpi=180)
         fig.patch.set_facecolor('#282c34')

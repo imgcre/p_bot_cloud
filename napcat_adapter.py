@@ -269,17 +269,17 @@ class NapCatBot:
             logger.warning("napcat ws received invalid json raw=%s", self._preview(raw), exc_info=True)
             raise
 
-        logger.debug("napcat ws frame received %s raw=%s", self._payload_summary(payload), self._preview(raw))
+        # logger.debug("napcat ws frame received %s raw=%s", self._payload_summary(payload), self._preview(raw))
         echo = payload.get("echo")
         if echo is not None and echo in self._pending:
             action, future = self._pending.pop(echo)
-            logger.debug(
-                "napcat api response matched action=%s echo=%s status=%s retcode=%s",
-                action,
-                echo,
-                payload.get("status"),
-                payload.get("retcode"),
-            )
+            # logger.debug(
+            #     "napcat api response matched action=%s echo=%s status=%s retcode=%s",
+            #     action,
+            #     echo,
+            #     payload.get("status"),
+            #     payload.get("retcode"),
+            # )
             if not future.done():
                 future.set_result(payload)
             return
@@ -291,7 +291,7 @@ class NapCatBot:
         if event is None:
             logger.debug("napcat event ignored %s", self._payload_summary(payload))
             return
-        logger.info("napcat event received %s", self._event_summary(event))
+        # logger.info("napcat event received %s", self._event_summary(event))
         self._schedule_event(event)
 
     def _schedule_event(self, event: Any) -> None:
@@ -352,12 +352,12 @@ class NapCatBot:
             "params": params or {},
             "echo": echo,
         }
-        logger.debug(
-            "napcat api request action=%s echo=%s params=%s",
-            action,
-            echo,
-            self._preview(params or {}),
-        )
+        # logger.debug(
+        #     "napcat api request action=%s echo=%s params=%s",
+        #     action,
+        #     echo,
+        #     self._preview(params or {}),
+        # )
         await self._ws.send(json.dumps(req, ensure_ascii=False))
         try:
             payload = await asyncio.wait_for(future, timeout=self.api_timeout)
@@ -384,7 +384,7 @@ class NapCatBot:
         )
         if resp.status not in ("ok", "async") or resp.retcode not in (0, 1):
             raise RuntimeError(f"NapCat action failed: {action}, {resp.status}, {resp.retcode}, {resp.message}")
-        logger.debug("napcat api response ok action=%s echo=%s retcode=%s", action, echo, resp.retcode)
+        # logger.debug("napcat api response ok action=%s echo=%s retcode=%s", action, echo, resp.retcode)
         return resp
 
     def _preview(self, value: Any, limit: int = 700) -> str:
