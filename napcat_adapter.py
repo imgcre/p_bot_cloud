@@ -33,9 +33,11 @@ from mirai.models.message import App, File, Forward, ForwardMessageNode, Message
 
 import mirai_compat  # noqa: F401
 from mirai.models.message import MarketFace, ShortVideo
+from utilities import get_logger
 
 
 Handler = Callable[[Any], Awaitable[None]]
+logger = get_logger()
 
 
 @dataclass
@@ -108,7 +110,7 @@ class NapCatBot:
         self.reconnect_interval = reconnect_interval
         self.api_timeout = api_timeout
         self._handlers: list[tuple[Type[Any], Handler]] = []
-        self._pending: dict[str, asyncio.Future] = {}
+        self._pending: dict[str, tuple[str, asyncio.Future]] = {}
         self._ws = None
         self._ws_loop: Optional[asyncio.AbstractEventLoop] = None
         self._connected_events: dict[asyncio.AbstractEventLoop, asyncio.Event] = {}
@@ -166,32 +168,51 @@ class NapCatBot:
         self._stopping = False
 
     async def shutdown(self) -> None:
+        logger.info("napcat bot shutdown requested")
         self._stopping = True
         if self._ws is not None:
             await self._ws.close()
-        for future in list(self._pending.values()):
+        for _, future in list(self._pending.values()):
             if not future.done():
                 future.cancel()
 
     async def background(self) -> None:
         while not self._stopping:
+            connected = False
             try:
                 headers = {}
                 if self.access_token:
                     headers["Authorization"] = f"Bearer {self.access_token}"
+                logger.info(
+                    "napcat ws connecting url=%s access_token=%s",
+                    self.ws_url,
+                    bool(self.access_token),
+                )
                 async with websockets.connect(self.ws_url, extra_headers=headers) as ws:
                     self._ws = ws
+                    connected = True
                     self._publish_connected(True)
+                    logger.info("napcat ws connected url=%s", self.ws_url)
                     async for raw in ws:
                         await self._handle_raw(raw)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 self._ws = None
                 self._publish_connected(False)
                 if not self._stopping:
+                    logger.warning(
+                        "napcat ws %s url=%s error=%r; reconnect in %.1fs",
+                        "disconnected" if connected else "connect failed",
+                        self.ws_url,
+                        exc,
+                        self.reconnect_interval,
+                        exc_info=True,
+                    )
                     await asyncio.sleep(self.reconnect_interval)
             finally:
+                if connected:
+                    logger.info("napcat ws disconnected url=%s", self.ws_url)
                 self._ws = None
                 self._publish_connected(False)
 
@@ -236,25 +257,45 @@ class NapCatBot:
     async def _start_background(self) -> None:
         task = asyncio.create_task(self.background())
         self._background_tasks.append(task)
+        logger.info("napcat ws background task started")
 
     async def _handle_raw(self, raw: str | bytes) -> None:
-        payload = json.loads(raw)
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            logger.warning("napcat ws received invalid json raw=%s", self._preview(raw), exc_info=True)
+            raise
+
+        logger.debug("napcat ws frame received %s raw=%s", self._payload_summary(payload), self._preview(raw))
         echo = payload.get("echo")
         if echo is not None and echo in self._pending:
-            future = self._pending.pop(echo)
+            action, future = self._pending.pop(echo)
+            logger.debug(
+                "napcat api response matched action=%s echo=%s status=%s retcode=%s",
+                action,
+                echo,
+                payload.get("status"),
+                payload.get("retcode"),
+            )
             if not future.done():
                 future.set_result(payload)
+            return
+        if echo is not None:
+            logger.warning("napcat api response has unknown echo=%s %s", echo, self._payload_summary(payload))
             return
 
         event = await self._event_from_onebot(payload)
         if event is None:
+            logger.debug("napcat event ignored %s", self._payload_summary(payload))
             return
+        logger.info("napcat event received %s", self._event_summary(event))
         self._schedule_event(event)
 
     def _schedule_event(self, event: Any) -> None:
         task = asyncio.create_task(self._emit(event))
         self._event_tasks.add(task)
         task.add_done_callback(self._event_tasks.discard)
+        logger.debug("napcat event scheduled %s pending_event_tasks=%d", self._event_summary(event), len(self._event_tasks))
 
     async def _emit(self, event: Any) -> None:
         for event_type, handler in list(self._handlers):
@@ -298,17 +339,34 @@ class NapCatBot:
         echo = uuid.uuid4().hex
         loop = asyncio.get_running_loop()
         future = loop.create_future()
-        self._pending[echo] = future
+        self._pending[echo] = (action, future)
         req = {
             "action": action,
             "params": params or {},
             "echo": echo,
         }
+        logger.debug(
+            "napcat api request action=%s echo=%s params=%s",
+            action,
+            echo,
+            self._preview(params or {}),
+        )
         await self._ws.send(json.dumps(req, ensure_ascii=False))
         try:
             payload = await asyncio.wait_for(future, timeout=self.api_timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(echo, None)
+            logger.warning(
+                "napcat api timeout action=%s echo=%s timeout=%.1fs pending=%d",
+                action,
+                echo,
+                self.api_timeout,
+                len(self._pending),
+            )
+            raise
         except Exception:
             self._pending.pop(echo, None)
+            logger.warning("napcat api failed action=%s echo=%s", action, echo, exc_info=True)
             raise
         resp = response_cls(
             status=payload.get("status", ""),
@@ -318,7 +376,85 @@ class NapCatBot:
         )
         if resp.retcode not in (0, 1) and resp.status != "ok":
             raise RuntimeError(f"NapCat action failed: {action}, {resp.retcode}, {resp.message}")
+        logger.debug("napcat api response ok action=%s echo=%s retcode=%s", action, echo, resp.retcode)
         return resp
+
+    def _preview(self, value: Any, limit: int = 700) -> str:
+        if isinstance(value, bytes):
+            text = value.decode("utf-8", errors="replace")
+        elif isinstance(value, str):
+            text = value
+        else:
+            try:
+                text = json.dumps(value, ensure_ascii=False, default=str)
+            except TypeError:
+                text = str(value)
+        text = text.replace("\r", "\\r").replace("\n", "\\n")
+        if len(text) > limit:
+            return f"{text[:limit]}...({len(text)} chars)"
+        return text
+
+    def _payload_summary(self, payload: dict[str, Any]) -> str:
+        parts = []
+        for key in ("post_type", "message_type", "notice_type", "request_type", "sub_type", "action", "status", "retcode"):
+            value = payload.get(key)
+            if value is not None:
+                parts.append(f"{key}={value}")
+        if payload.get("echo") is not None:
+            parts.append(f"echo={payload.get('echo')}")
+        if payload.get("group_id") is not None:
+            parts.append(f"group_id={payload.get('group_id')}")
+        if payload.get("user_id") is not None:
+            parts.append(f"user_id={payload.get('user_id')}")
+        if payload.get("message_id") is not None:
+            parts.append(f"message_id={payload.get('message_id')}")
+        return " ".join(parts) or "payload=unknown"
+
+    def _event_summary(self, event: Any) -> str:
+        try:
+            if isinstance(event, GroupMessage):
+                return (
+                    f"GroupMessage group_id={getattr(getattr(event, 'group', None), 'id', None)} "
+                    f"sender_id={getattr(getattr(event, 'sender', None), 'id', None)} "
+                    f"message_id={getattr(getattr(event, 'message_chain', None), 'message_id', None)}"
+                )
+            if isinstance(event, TempMessage):
+                return (
+                    f"TempMessage group_id={getattr(getattr(event, 'group', None), 'id', None)} "
+                    f"sender_id={getattr(getattr(event, 'sender', None), 'id', None)} "
+                    f"message_id={getattr(getattr(event, 'message_chain', None), 'message_id', None)}"
+                )
+            if isinstance(event, FriendMessage):
+                return (
+                    f"FriendMessage sender_id={getattr(getattr(event, 'sender', None), 'id', None)} "
+                    f"message_id={getattr(getattr(event, 'message_chain', None), 'message_id', None)}"
+                )
+            if isinstance(event, MemberJoinRequestEvent):
+                return (
+                    "MemberJoinRequestEvent "
+                    f"group_id={getattr(event, 'group_id', getattr(event, 'groupId', None))} "
+                    f"from_id={getattr(event, 'from_id', getattr(event, 'fromId', None))}"
+                )
+            if isinstance(event, NudgeEvent):
+                subject = getattr(event, "subject", None)
+                return (
+                    f"NudgeEvent subject={getattr(subject, 'kind', None)}:{getattr(subject, 'id', None)} "
+                    f"from_id={getattr(event, 'from_id', getattr(event, 'fromId', None))} "
+                    f"target={getattr(event, 'target', None)}"
+                )
+            if isinstance(event, GroupRecallEvent):
+                return (
+                    f"GroupRecallEvent group_id={getattr(getattr(event, 'group', None), 'id', None)} "
+                    f"message_id={getattr(event, 'message_id', getattr(event, 'messageId', None))} "
+                    f"author_id={getattr(event, 'author_id', getattr(event, 'authorId', None))}"
+                )
+            if isinstance(event, (MemberJoinEvent, MemberUnmuteEvent, MemberCardChangeEvent)):
+                member = getattr(event, "member", None)
+                group = getattr(member, "group", None)
+                return f"{type(event).__name__} group_id={getattr(group, 'id', None)} member_id={getattr(member, 'id', None)}"
+        except Exception:
+            logger.debug("napcat event summary failed type=%s", type(event).__name__, exc_info=True)
+        return type(event).__name__
 
     async def call_action_data(self, action: str, params: Optional[dict[str, Any]] = None) -> Any:
         return (await self.call_action(action, params)).data
