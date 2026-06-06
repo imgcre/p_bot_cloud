@@ -167,7 +167,8 @@ class Rest(Plugin):
         rank = list(merged_history.values())
         rank.sort(key=lambda el: el.total_span, reverse=True)
         rank = rank[:10]
-        rank = [asdict(ConvertedRestHistory.from_rest_history(el, el.who.id in self.bed[group_id])) for el in rank]
+        sleeping_members = self.bed.get(group_id, {})
+        rank = [asdict(ConvertedRestHistory.from_rest_history(el, el.who.id in sleeping_members)) for el in rank]
         b64_img = await renderer.render('rest-rank', data=rank)
         return [
             Image(base64=b64_img)

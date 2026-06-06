@@ -88,6 +88,9 @@ class ResourceAccessor:
     async def get(self, *args):
         return await self._getter(*args)
 
+    async def __call__(self, *args):
+        return await self.get(*args)
+
     async def set(self, *args):
         if self._setter is None:
             raise NotImplementedError("set is not supported")
