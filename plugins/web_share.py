@@ -166,21 +166,27 @@ class WebShare(Plugin):
         qr.make(fit=True)
         qr_image = qr.make_image(fill_color='black', back_color='white').convert('RGBA')
 
-        qr_size = max(92, min(152, image.width // 5, image.height // 3))
+        qr_size = max(92, min(136, image.width // 5, image.height // 3))
         resample = getattr(getattr(PILImage, 'Resampling', PILImage), 'LANCZOS')
         qr_image = qr_image.resize((qr_size, qr_size), resample)
 
-        pad = max(16, qr_size // 8)
+        pad = max(6, qr_size // 18)
         box_size = qr_size + pad * 2
         box = PILImage.new('RGBA', (box_size, box_size), (255, 255, 255, 235))
         box.alpha_composite(qr_image, (pad, pad))
 
-        x = max(0, image.width - box_size - 18)
-        y = max(0, image.height - box_size - 18)
-        image.alpha_composite(box, (x, y))
+        margin = max(14, qr_size // 8)
+        footer_height = box_size + margin * 2
+        footer_color = image.getpixel((min(image.width - 1, 8), max(0, image.height - 8)))
+        canvas = PILImage.new('RGBA', (image.width, image.height + footer_height), footer_color)
+        canvas.alpha_composite(image, (0, 0))
+
+        x = max(margin, image.width - box_size - margin)
+        y = image.height + margin
+        canvas.alpha_composite(box, (x, y))
 
         out = BytesIO()
-        image.save(out, format='PNG')
+        canvas.save(out, format='PNG')
         return out.getvalue()
 
     async def get_code(self, request: Request):
