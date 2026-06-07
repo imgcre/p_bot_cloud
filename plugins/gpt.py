@@ -622,7 +622,7 @@ class Gpt(Plugin):
         if not segment:
             return
         chain = await self._postprocess_ai_text(segment)
-        chain = self.ai_ext.render_rich_chain_images(chain)
+        chain = await self.ai_ext.render_rich_chain_images(chain)
         chain = self.ai_ext._normalize_message_chain(chain)
         if len(chain) == 0:
             return

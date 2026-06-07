@@ -169,3 +169,5 @@ backups-*/
 plugins/*/
 /config.py
 logs/
+
+/AGENTS.override.md

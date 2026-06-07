@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from plugins.admin import Admin
     from plugins.throttle import Throttle
     from plugins.voucher import Voucher
+    from plugins.web_share import WebShare
 
 class AiExtAchv(AchvEnum):
     AI_COOLDOWN = 0, 'AI冷却中', '主动和bot对话功能在冷却状态下时自动获得', AchvOpts(display_pinned=True, locked=True, hidden=True, display='🆒', display_weight=-1)
@@ -43,6 +44,7 @@ class AiExt(Plugin):
     admin: Inject['Admin']
     throttle: Inject['Throttle']
     voucher: Inject['Voucher']
+    web_share: Inject['WebShare']
 
     # 单位是秒
     SPEEDUP_LOOKUP: Final = {
@@ -170,9 +172,9 @@ class AiExt(Plugin):
                 return font_path
         return 'Droid Sans Fallback'
 
-    def _render_code_image(self, code: str, lang: str = ''):
+    async def _render_code_image(self, code: str, lang: str = ''):
         font_name = self._get_code_font_name()
-        key = ('code', 'cjk-font-v2', font_name, lang, code)
+        key = ('code', 'cjk-font-v3-qr', font_name, lang, code)
         cached = self._get_cached_rich_image(key)
         if cached is not None:
             return cached
@@ -196,6 +198,8 @@ class AiExt(Plugin):
             image_pad=24,
         )
         png_bytes = highlight(code.rstrip('\n') or ' ', lexer, formatter)
+        share = await self.web_share.create_code_share(code, lang=lang, source='ai_ext')
+        png_bytes = self.web_share.append_qr_to_png(png_bytes, share.url)
         b64_img = base64.b64encode(png_bytes).decode('ascii')
         return self._put_cached_rich_image(key, b64_img)
 
@@ -640,7 +644,7 @@ class AiExt(Plugin):
             parts.append(text[last:])
         return parts
 
-    def _render_rich_text_images(self, text: str):
+    async def _render_rich_text_images(self, text: str):
         code_pattern = re.compile(r'```([^\n`]*)\n?(.*?)```', re.DOTALL)
         parts = []
         last = 0
@@ -650,7 +654,7 @@ class AiExt(Plugin):
             lang = match.group(1).strip()
             code = match.group(2)
             try:
-                parts.append(self._render_code_image(code, lang))
+                parts.append(await self._render_code_image(code, lang))
             except Exception:
                 parts.append(match.group(0))
             last = match.end()
@@ -658,17 +662,17 @@ class AiExt(Plugin):
             parts.extend(self._split_math_images(text[last:]))
         return [p for p in parts if not isinstance(p, str) or len(p) > 0]
 
-    def _render_rich_chain_images(self, mc: list):
+    async def _render_rich_chain_images(self, mc: list):
         rendered = []
         for e in mc:
             if isinstance(e, str):
-                rendered.extend(self._render_rich_text_images(e))
+                rendered.extend(await self._render_rich_text_images(e))
             else:
                 rendered.append(e)
         return rendered
 
-    def render_rich_chain_images(self, mc: list):
-        return self._render_rich_chain_images(mc)
+    async def render_rich_chain_images(self, mc: list):
+        return await self._render_rich_chain_images(mc)
 
     def _chain_text_len(self, mc: list):
         return sum(len(e) for e in mc if isinstance(e, str))
@@ -749,7 +753,7 @@ class AiExt(Plugin):
         return [m for m in messages if len(m) > 0]
 
     async def send_chat_segments(self, op: SourceOp, *, mc: list):
-        mc = self._render_rich_chain_images(mc)
+        mc = await self._render_rich_chain_images(mc)
         messages, found_break = self._split_chain_by_breaks(mc)
         if not found_break:
             messages = self._split_chain_by_length(mc)
