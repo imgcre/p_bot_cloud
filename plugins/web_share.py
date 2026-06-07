@@ -161,14 +161,11 @@ class WebShare(Plugin):
         with PILImage.open(BytesIO(png_bytes)) as source:
             image = source.convert('RGBA')
 
-        qr = qrcode.QRCode(border=1, box_size=6)
+        qr = qrcode.QRCode(border=1, box_size=3)
         qr.add_data(url)
         qr.make(fit=True)
         qr_image = qr.make_image(fill_color='black', back_color='white').convert('RGBA')
-
-        qr_size = max(92, min(136, image.width // 5, image.height // 3))
-        resample = getattr(getattr(PILImage, 'Resampling', PILImage), 'LANCZOS')
-        qr_image = qr_image.resize((qr_size, qr_size), resample)
+        qr_size = qr_image.width
 
         pad = max(6, qr_size // 18)
         box_size = qr_size + pad * 2
