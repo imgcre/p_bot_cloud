@@ -13,6 +13,10 @@ import aiosqlite
 import qrcode
 from PIL import Image as PILImage
 from plugin import Plugin, autorun, route
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
+from pygments.util import ClassNotFound
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -72,6 +76,14 @@ class WebShare(Plugin):
 
     def _make_id(self, content_hash: str, length: int):
         return base64.b32encode(bytes.fromhex(content_hash)).decode('ascii').lower().rstrip('=')[:length]
+
+    def _highlight_code_html(self, content: str, lang: str):
+        try:
+            lexer = get_lexer_by_name(lang.strip()) if lang.strip() else guess_lexer(content)
+        except ClassNotFound:
+            lexer = TextLexer()
+        formatter = HtmlFormatter(nowrap=True)
+        return highlight(content, lexer, formatter)
 
     async def _fetchone(self, db, query: str, params: tuple):
         cursor = await db.execute(query, params)
@@ -152,6 +164,7 @@ class WebShare(Plugin):
             'id': row['id'],
             'lang': row['lang'],
             'content': row['content'],
+            'highlighted_html': self._highlight_code_html(row['content'], row['lang']),
             'source': row['source'],
             'metadata': json.loads(row['metadata_json'] or '{}'),
             'created_at': row['created_at'],
