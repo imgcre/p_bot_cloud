@@ -11,6 +11,7 @@ from typing import Final,  Optional
 from event_types import EffectiveSpeechEvent
 from mirai import At, GroupMessage, Image, MessageEvent, Plain
 from plugin import Plugin, any_instr, delegate, InstrAttr, route, enable_backup, Inject
+from plugins.code_highlight import get_code_lexer
 from mirai.models.entities import GroupMember
 
 from typing import TYPE_CHECKING
@@ -181,13 +182,7 @@ class AiExt(Plugin):
 
         from pygments import highlight
         from pygments.formatters import ImageFormatter
-        from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
-        from pygments.util import ClassNotFound
-
-        try:
-            lexer = get_lexer_by_name(lang.strip()) if lang.strip() else guess_lexer(code)
-        except ClassNotFound:
-            lexer = TextLexer()
+        lexer = get_code_lexer(code, lang)
 
         formatter = ImageFormatter(
             style='one-dark',

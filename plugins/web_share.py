@@ -12,11 +12,10 @@ from typing import Optional
 import aiosqlite
 import qrcode
 from PIL import Image as PILImage
+from plugins.code_highlight import get_code_lexer
 from plugin import Plugin, autorun, route
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
-from pygments.lexers import TextLexer, get_lexer_by_name, guess_lexer
-from pygments.util import ClassNotFound
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -78,10 +77,7 @@ class WebShare(Plugin):
         return base64.b32encode(bytes.fromhex(content_hash)).decode('ascii').lower().rstrip('=')[:length]
 
     def _highlight_code_html(self, content: str, lang: str):
-        try:
-            lexer = get_lexer_by_name(lang.strip()) if lang.strip() else guess_lexer(content)
-        except ClassNotFound:
-            lexer = TextLexer()
+        lexer = get_code_lexer(content, lang)
         formatter = HtmlFormatter(nowrap=True)
         return highlight(content, lexer, formatter)
 
