@@ -359,7 +359,7 @@ class CheckIn(Plugin, AchvCustomizer):
 
 
     @delegate(InstrAttr.FORCE_BACKUP)
-    async def do_check_in(self, glse_: gls.event_t(), group_member: GroupMember, source: Source, *, raise_error = False, silent = False):
+    async def do_check_in(self, glse_: gls.event_t(), group_member: GroupMember, source: Source, *, raise_error = False, silent = False, skip_feedback = False):
 
         glse = typing.cast(GroupLocalStorageAsEvent[CheckInMan], glse_)
         man = glse.get_or_create_data()
@@ -399,11 +399,12 @@ class CheckIn(Plugin, AchvCustomizer):
 
         await self.achv.update_member_name()
 
-        msg_id = source.get_message_id()
-        if msg_id is not None:
-            await self.nap_cat.set_msg_emoji_like(msg_id, 124)
-        else:
-            await self.nap_cat.send_poke()
+        if not skip_feedback:
+            msg_id = source.get_message_id()
+            if msg_id is not None:
+                await self.nap_cat.set_msg_emoji_like(msg_id, 124)
+            else:
+                await self.nap_cat.send_poke()
 
         if not silent:
             return [f'今天第{ranking}个签到']
@@ -422,4 +423,3 @@ class CheckIn(Plugin, AchvCustomizer):
             #     Image(base64=b64_img)
             # ]
             
-
