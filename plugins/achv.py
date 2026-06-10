@@ -8,7 +8,7 @@ import sys
 import time
 from typing import Awaitable, Callable, Dict, Optional, Union
 from event_types import AchvObtainedEvent, AchvRemovedEvent
-from mirai import At
+from mirai import At, Image
 from plugin import AchvCustomizer, Inject, InjectNotifier, InstrAttr, Plugin, any_instr, autorun, card_changed_instr, delegate, top_instr, route, enable_backup
 from utilities import AchvEnum, AchvExtra, AchvInfo, AchvRarity, AchvRarityVal, AdminType, GroupLocalStorage, GroupOp, breakdown_chain_sync, get_logger, throttle_config
 from regex_emoji import EMOJI_REGEXP, EMOJI_SEQUENCE
@@ -95,13 +95,16 @@ class Achv(Plugin, InjectNotifier):
         return group_id, member_id
 
     def _make_qr_data_url(self, text: str):
+        return 'data:image/png;base64,' + self._make_qr_base64(text)
+
+    def _make_qr_base64(self, text: str):
         qr = qrcode.QRCode(border=1, box_size=5)
         qr.add_data(text)
         qr.make(fit=True)
         image = qr.make_image(fill_color='black', back_color='white').convert('RGB')
         out = BytesIO()
         image.save(out, format='PNG')
-        return 'data:image/png;base64,' + base64.b64encode(out.getvalue()).decode('ascii')
+        return base64.b64encode(out.getvalue()).decode('ascii')
 
     def _json(self, data: dict, *, status_code: int = 200):
         return JSONResponse({'code': 0, 'data': data}, status_code=status_code)
@@ -386,11 +389,11 @@ class Achv(Plugin, InjectNotifier):
 
     @top_instr('所有成就')
     async def all_achv(self):
-        s = []
-        for p, meta in self.registed_achv.items():
-            s.append(f'{p.get_config().name}:')
-            s.extend((str(e.value) for e in meta))
-        return '\n'.join(s)
+        url = f'{self.public_base_url}/achvs'
+        return [
+            f'所有成就页面：{url}\n',
+            Image(base64=self._make_qr_base64(url)),
+        ]
 
     # @admin
     # @top_instr('summary')
@@ -542,6 +545,37 @@ class Achv(Plugin, InjectNotifier):
             achvs.append(item)
         return achvs
 
+    def _make_all_achvs_payload(self):
+        achvs = []
+        for p, meta in self.registed_achv.items():
+            plugin_name = p.get_config().name
+            for achv_enum in meta:
+                achv_enum = typing.cast(AchvEnum, achv_enum)
+                info = typing.cast(AchvInfo, achv_enum.value)
+                if info.opts.hidden:
+                    continue
+                achvs.append({
+                    'aka': info.aka,
+                    'real_aka': info.aka,
+                    'condition': None if info.opts.condition_hidden else info.condition,
+                    'progress_text': None,
+                    'obtained_ts': None,
+                    'target_obtained_cnt': info.opts.target_obtained_cnt,
+                    'formatted_target_obtained_cnt': info.opts.formatted_target_obtained_cnt,
+                    'obtained_cnt': 0,
+                    'unit': info.opts.unit,
+                    'source': plugin_name,
+                    'catalog': True,
+                    'opts': {
+                        'rarity': info.opts.rarity.name,
+                        'rarity_text': info.opts.rarity.value.aka,
+                        'is_punish': info.opts.is_punish,
+                        'emoji_display': info.get_display_text() if EMOJI_REGEXP.fullmatch(info.get_display_text()) else None
+                    },
+                    'is_eligible': False,
+                })
+        return achvs
+
     async def _get_progress_text(self, achv: AchvEnum, man: Optional[CollectedAchvMan]):
         info = typing.cast(AchvInfo, achv.value)
         real_aka = info.aka
@@ -589,8 +623,17 @@ class Achv(Plugin, InjectNotifier):
                     'updated_at': int(time.time()),
                 })
 
+    async def api_all_achvs(self, request: Request):
+        return self._json({
+            'id': 'all',
+            'name': '所有成就',
+            'achvs': self._make_all_achvs_payload(),
+            'updated_at': int(time.time()),
+        })
+
     @autorun
     async def startup(self):
+        self.bot.asgi.add_route('/api/achvs', self.api_all_achvs, ['GET'])
         self.bot.asgi.add_route('/api/achvs/{share_id}', self.api_member_achvs, ['GET'])
 
     @top_instr('说明')
