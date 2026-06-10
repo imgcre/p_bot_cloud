@@ -9,7 +9,7 @@ import time
 from typing import Awaitable, Callable, Dict, Optional, Union
 from event_types import AchvObtainedEvent, AchvRemovedEvent
 from mirai import At
-from plugin import AchvCustomizer, Inject, InjectNotifier, InstrAttr, Plugin, any_instr, card_changed_instr, delegate, top_instr, route, enable_backup
+from plugin import AchvCustomizer, Inject, InjectNotifier, InstrAttr, Plugin, any_instr, autorun, card_changed_instr, delegate, top_instr, route, enable_backup
 from utilities import AchvEnum, AchvExtra, AchvInfo, AchvRarity, AchvRarityVal, AdminType, GroupLocalStorage, GroupOp, breakdown_chain_sync, get_logger, throttle_config
 from regex_emoji import EMOJI_REGEXP, EMOJI_SEQUENCE
 import typing
@@ -24,6 +24,13 @@ if TYPE_CHECKING:
     from plugins.events import Events
     from plugins.nap_cat import NapCat
     from plugins.voucher import Voucher
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+import qrcode
+from io import BytesIO
+import base64
+import hashlib
+import hmac
 
 logger = get_logger()
 
@@ -52,6 +59,7 @@ class CollectedAchvMan():
 @route('成就系统')
 @enable_backup
 class Achv(Plugin, InjectNotifier):
+    public_base_url = 'https://bot.napluss.cn'
     gls: GroupLocalStorage[CollectedAchvMan] = GroupLocalStorage[CollectedAchvMan]()
 
     renderer: Inject['Renderer']
@@ -63,6 +71,43 @@ class Achv(Plugin, InjectNotifier):
 
     def __init__(self):
         self.registed_achv: Dict[Plugin, EnumMeta] = {}
+
+    def _share_token(self, group_id: int, member_id: int):
+        raw = f'{group_id}:{member_id}'.encode('utf-8')
+        secret = f'{self.__class__.__module__}.{self.__class__.__name__}'.encode('utf-8')
+        return hmac.new(secret, raw, hashlib.sha256).hexdigest()[:12]
+
+    def _share_id(self, group_id: int, member_id: int):
+        return f'{group_id}-{member_id}-{self._share_token(group_id, member_id)}'
+
+    def _parse_share_id(self, share_id: str):
+        parts = share_id.split('-')
+        if len(parts) != 3:
+            return None
+        try:
+            group_id = int(parts[0])
+            member_id = int(parts[1])
+        except ValueError:
+            return None
+        token = parts[2]
+        if token != self._share_token(group_id, member_id):
+            return None
+        return group_id, member_id
+
+    def _make_qr_data_url(self, text: str):
+        qr = qrcode.QRCode(border=1, box_size=5)
+        qr.add_data(text)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color='black', back_color='white').convert('RGB')
+        out = BytesIO()
+        image.save(out, format='PNG')
+        return 'data:image/png;base64,' + base64.b64encode(out.getvalue()).decode('ascii')
+
+    def _json(self, data: dict, *, status_code: int = 200):
+        return JSONResponse({'code': 0, 'data': data}, status_code=status_code)
+
+    def _error(self, err_msg: str, *, status_code: int = 400):
+        return JSONResponse({'code': 1, 'errMsg': err_msg}, status_code=status_code)
 
     def register(self, plugin: Plugin, em: EnumMeta):
         if plugin in self.registed_achv: return
@@ -453,35 +498,100 @@ class Achv(Plugin, InjectNotifier):
             if man is None or len(man.achvs) == 0:
                 return '尚未获得任何成就'
             
-            achvs = []
-            
-            # for achv_enum, extra in man.achvs.items():
-            for achv_enum in await self.get_processing():
-                info = typing.cast(AchvInfo, achv_enum.value)
-                if info.opts.hidden: continue
-                obtained_ts = await self.get_achv_obtained_ts(achv_enum)
-                obtained_cnt = await self.get_achv_process(achv_enum)
-                if obtained_cnt is None:
-                    obtained_cnt = info.opts.target_obtained_cnt
-
-                item = {
-                    'aka': await self.get_achv_name(achv_enum),
-                    'obtained_ts': obtained_ts,
-                    'target_obtained_cnt': info.opts.target_obtained_cnt,
-                    'obtained_cnt': obtained_cnt,
-                    'opts': {
-                        'rarity': info.opts.rarity.name,
-                        'is_punish': info.opts.is_punish,
-                        'emoji_display': info.get_display_text() if EMOJI_REGEXP.fullmatch(info.get_display_text()) else None
-                    },
-                    'is_eligible': await self.is_deletable(achv_enum) and info.opts.rarity.value.level >= AchvRarity.UNCOMMON.value.level,
-                }
-                achvs.append(item)
+            share_id = self._share_id(member.group.id, member.id)
+            share_url = f'{self.public_base_url}/achvs/{share_id}'
 
             await self.renderer.render_as_task(url='member-achvs', data={
                 'name': await self.get_raw_member_name(),
-                'achvs': achvs
+                'achvs': await self._make_member_achvs_payload(man),
+                'share_url': share_url,
+                'qr_data_url': self._make_qr_data_url(share_url),
             })
+
+    async def _make_member_achvs_payload(self, man: Optional[CollectedAchvMan]):
+        achvs = []
+
+        for achv_enum in await Achv.get_processing.__wrapped__(self, man):
+            info = typing.cast(AchvInfo, achv_enum.value)
+            if info.opts.hidden: continue
+            obtained_ts = await Achv.get_achv_obtained_ts.__wrapped__(self, achv_enum, man)
+            obtained_cnt = await Achv.get_achv_process.__wrapped__(self, achv_enum, man)
+            if obtained_cnt is None:
+                obtained_cnt = info.opts.target_obtained_cnt
+
+            progress_text = await self._get_progress_text(achv_enum, man)
+
+            item = {
+                'aka': await Achv.get_achv_name.__wrapped__(self, achv_enum, man),
+                'real_aka': info.aka,
+                'condition': None if info.opts.condition_hidden else info.condition,
+                'progress_text': progress_text,
+                'obtained_ts': obtained_ts,
+                'target_obtained_cnt': info.opts.target_obtained_cnt,
+                'formatted_target_obtained_cnt': info.opts.formatted_target_obtained_cnt,
+                'obtained_cnt': obtained_cnt,
+                'unit': info.opts.unit,
+                'opts': {
+                    'rarity': info.opts.rarity.name,
+                    'rarity_text': info.opts.rarity.value.aka,
+                    'is_punish': info.opts.is_punish,
+                    'emoji_display': info.get_display_text() if EMOJI_REGEXP.fullmatch(info.get_display_text()) else None
+                },
+                'is_eligible': await Achv.is_deletable.__wrapped__(self, achv_enum, man) and info.opts.rarity.value.level >= AchvRarity.UNCOMMON.value.level,
+            }
+            achvs.append(item)
+        return achvs
+
+    async def _get_progress_text(self, achv: AchvEnum, man: Optional[CollectedAchvMan]):
+        info = typing.cast(AchvInfo, achv.value)
+        real_aka = info.aka
+
+        if man is None or len(man.achvs) == 0:
+            return f'尚未开始成就"{real_aka}"的获取进度'
+
+        e = next((k for k in man.achvs.keys() if real_aka == typing.cast(AchvInfo, k.value).aka), None)
+        if e is None:
+            return f'尚未开始成就"{real_aka}"的获取进度'
+
+        if man.has_static(e):
+            prob = await self.voucher.get_draw_prob(achv)
+            ext_str = f'，使用指令【#抽奖 {real_aka}】可用本成就抽取猫条(概率{prob * 100:.1f}%)' if await Achv.is_deletable.__wrapped__(self, achv, man) and info.opts.rarity.value.level >= AchvRarity.UNCOMMON.value.level else ''
+            return f'已获得成就"{real_aka}"{ext_str}'
+
+        p = next((k for k, v in self.registed_achv.items() if v is e.__class__))
+        if isinstance(p, AchvCustomizer):
+            if info.opts.custom_progress_str:
+                return f'{info}({info.condition}): {await p.get_progress_str(e, man.achvs[e])}'
+
+        obtained_cnt = man.achvs[e].obtained_cnt
+        return f'{obtained_cnt}/{info.opts.formatted_target_obtained_cnt}{info.opts.unit}'
+
+    async def api_member_achvs(self, request: Request):
+        share_id = request.path_params.get('share_id')
+        parsed = self._parse_share_id(share_id or '')
+        if parsed is None:
+            return self._error('invalid achievement page id', status_code=404)
+
+        group_id, member_id = parsed
+        member = await self.bot.get_group_member(group_id, member_id)
+        if member is None:
+            return self._error('member not found', status_code=404)
+
+        man = self.gls.get_data(group_id, member_id)
+        with self.engine.of() as ctx, ctx:
+            async with self.override(member):
+                return self._json({
+                    'id': share_id,
+                    'name': await self.get_raw_member_name(),
+                    'group_id': group_id,
+                    'member_id': member_id,
+                    'achvs': await self._make_member_achvs_payload(man),
+                    'updated_at': int(time.time()),
+                })
+
+    @autorun
+    async def startup(self):
+        self.bot.asgi.add_route('/api/achvs/{share_id}', self.api_member_achvs, ['GET'])
 
     @top_instr('说明')
     async def achv_desc(self, aka: Optional[str]):
