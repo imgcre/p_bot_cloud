@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
+import base64
 import time
 from typing import Any, Final, Optional
 import typing
 from decimal import ROUND_HALF_UP, Decimal
+from io import BytesIO
 from uuid import UUID
 import uuid
 
@@ -11,10 +13,13 @@ from mirai.models.entities import GroupMember, Group
 import mirai.models.message
 
 from nap_cat_types import GetGroupMemberInfoResp
-from plugin import Inject, Plugin, delegate, enable_backup, top_instr, any_instr, InstrAttr, route
+from plugin import Inject, Plugin, delegate, enable_backup, top_instr, any_instr, InstrAttr, route, autorun
 import random
 import random
 from itertools import groupby
+import qrcode
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from utilities import VOUCHER_NAME, VOUCHER_UNIT, AchvEnum, AchvInfo, AchvOpts, AchvRarity, AchvRarityVal, AdminType, Source, Upgraded, User, UserSpec, VoucherRecordKill, VoucherRecordReward, voucher_round_half_up
 
@@ -28,6 +33,7 @@ if TYPE_CHECKING:
     from plugins.nap_cat import NapCat
     from plugins.admin import Admin
     from plugins.renderer import Renderer
+    from plugins.known_groups import KnownGroups
 
 @dataclass
 class DrawResult():
@@ -137,6 +143,7 @@ class UserVoucherMan(Upgraded):
 @route('兑奖券系统')
 @enable_backup
 class Voucher(Plugin):
+    public_base_url = 'https://bot.napluss.cn'
     user_sweepstakes: UserSpec[UserVoucherMan] = UserSpec[UserVoucherMan]()
 
     achv: Inject['Achv']
@@ -144,6 +151,7 @@ class Voucher(Plugin):
     nap_cat: Inject['NapCat']
     admin: Inject['Admin']
     renderer: Inject['Renderer']
+    known_groups: Inject['KnownGroups']
 
     PROBS: Final = {
         AchvRarity.UNCOMMON: Decimal('0.1'),
@@ -153,6 +161,24 @@ class Voucher(Plugin):
     }
 
     MAG_PUNISHMENT: Final = Decimal('0.01') # 惩罚倍率
+
+    def _json(self, data: dict, *, status_code: int = 200):
+        return JSONResponse({'code': 0, 'data': data}, status_code=status_code)
+
+    def _error(self, err_msg: str, *, status_code: int = 400):
+        return JSONResponse({'code': 1, 'errMsg': err_msg}, status_code=status_code)
+
+    def _make_qr_base64(self, text: str):
+        qr = qrcode.QRCode(border=1, box_size=5)
+        qr.add_data(text)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color='black', back_color='white').convert('RGB')
+        out = BytesIO()
+        image.save(out, format='PNG')
+        return base64.b64encode(out.getvalue()).decode('ascii')
+
+    def _make_qr_data_url(self, text: str):
+        return 'data:image/png;base64,' + self._make_qr_base64(text)
 
     @delegate()
     async def is_satisfied(self, user: User, *, cnt: Decimal):
@@ -363,6 +389,23 @@ class Voucher(Plugin):
 
     @top_instr('富豪榜', InstrAttr.NO_ALERT_CALLER)
     async def get_rich_list_cmd(self, group: Group):
+        data = await self._make_rich_list_payload(group.id)
+
+        if len(data['richs']) == 0:
+            return [f'大家都没有{VOUCHER_NAME}……']
+
+        share_url = f'{self.public_base_url}/rich-list'
+        data['share_url'] = share_url
+        data['qr_data_url'] = self._make_qr_data_url(share_url)
+
+        b64_img = await self.renderer.render('rich-list', data=data)
+
+        return [
+            mirai.models.message.Image(base64=b64_img)
+        ]
+
+    async def _make_rich_list_payload(self, group_id: int):
+        group = await self.bot.get_group(group_id)
         members = (await self.bot.member_list(group.id)).data
 
         li_all = sorted(
@@ -382,32 +425,48 @@ class Voucher(Plugin):
             'total': str(all_count),
             'richs': richs,
             'total_member': len(li_all),
+            'group_id': group.id,
+            'group_name': group.name,
+            'unit': VOUCHER_UNIT,
+            'name': VOUCHER_NAME,
+            'updated_at': int(time.time()),
         }
 
         if len(li_all) == 0:
-            return [f'大家都没有{VOUCHER_NAME}……']
+            return data
         
         curr_sum = Decimal('0')
-        
-        # res = [f'市面上一共流通了{all_count}张券\n']
 
         for member, man in li_all:
-            async with self.override(member):
-                richs.append({
-                    'name': await self.achv.get_raw_member_name(),
-                    'avatar_url': '',
-                    'value': str(man.count),
-                })
-                curr_sum += man.count
-                if curr_sum / all_count > 0.9:
-                    break
-            
+            richs.append({
+                'member_id': member.id,
+                'name': await type(self.achv).get_raw_member_name.__wrapped__(self.achv, member),
+                'avatar_url': '',
+                'value': str(man.count),
+            })
+            curr_sum += man.count
+            if curr_sum / all_count > 0.9:
+                break
 
-        b64_img = await self.renderer.render('rich-list', data=data)
+        return data
 
-        return [
-            mirai.models.message.Image(base64=b64_img)
-        ]
+    async def api_rich_list(self, request: Request):
+        group_id = request.query_params.get('group_id')
+        if group_id is None:
+            try:
+                group_id = next(iter(self.known_groups))
+            except StopIteration:
+                return self._error('known group not configured', status_code=404)
+        else:
+            try:
+                group_id = int(group_id)
+            except ValueError:
+                return self._error('invalid group id', status_code=400)
+        return self._json(await self._make_rich_list_payload(group_id))
+
+    @autorun
+    async def startup(self):
+        self.bot.asgi.add_route('/api/rich-list', self.api_rich_list, ['GET'])
 
     # @top_instr('富豪榜-old', InstrAttr.NO_ALERT_CALLER)
     # async def get_rich_list_old_cmd(self, group: Group):
