@@ -387,11 +387,11 @@ class Achv(Plugin, InjectNotifier):
         man._using = e
 
 
-    @top_instr('所有成就')
+    @top_instr('所有成就', InstrAttr.NO_ALERT_CALLER)
     async def all_achv(self):
         url = f'{self.public_base_url}/achvs'
         return [
-            f'所有成就页面：{url}\n',
+            # f'所有成就页面：{url}\n',
             Image(base64=self._make_qr_base64(url)),
         ]
 
