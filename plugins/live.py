@@ -1592,29 +1592,86 @@ class Live(Plugin, AchvCustomizer):
     @timer(60, exactly=False)
     async def guard_timer(self):
         room = live.LiveRoom(5288154)
-        resp = await room.get_dahanghai()
-        uids = [it['uid'] for it in [*resp['list'], *resp['top3']]]
+        logger.debug('guard_timer start')
+        try:
+            resp = await room.get_dahanghai()
+        except Exception:
+            logger.exception('guard_timer get_dahanghai failed')
+            raise
+
+        logger.debug(f'guard_timer get_dahanghai keys={list(resp.keys()) if isinstance(resp, dict) else type(resp).__name__}')
+        try:
+            dahanghai_items = [*resp['list'], *resp['top3']]
+            uids = [it['uid'] for it in dahanghai_items]
+        except Exception:
+            logger.exception(f'guard_timer parse get_dahanghai failed resp={repr(resp)[:1000]}')
+            raise
+
+        api_uid_types = sorted({type(uid).__name__ for uid in uids})
         bound_users = [(qq, bs) for qq, it in self.user_binds.users.items() if (bs := it.get_bound()) is not None]
+        logger.info(
+            f'guard_timer fetched guards={len(uids)} bound_users={len(bound_users)} '
+            f'api_uid_types={api_uid_types} api_uid_sample={uids[:10]}'
+        )
 
         ats = []
+        matched_bound_guard_count = 0
 
         for qq_id, bs in bound_users:
+            had_guard = bs.guard is not None
+            prev_last_reward_ts = bs.guard.last_reward_ts if bs.guard is not None else None
             uname_is_guard = bs.uid is not None and bs.uid in uids
+            if uname_is_guard:
+                matched_bound_guard_count += 1
+
+            logger.debug(
+                f'guard_timer user check qq_id={qq_id} uname={bs.uname!r} uid={bs.uid!r} '
+                f'uid_type={type(bs.uid).__name__} is_guard_api={uname_is_guard} '
+                f'had_guard={had_guard} last_reward_ts={prev_last_reward_ts}'
+            )
 
             if uname_is_guard and bs.guard is None:
                 bs.guard = Guard()
+                logger.info(f'guard_timer guard state created qq_id={qq_id} uname={bs.uname!r} uid={bs.uid!r}')
             if not uname_is_guard:
+                if bs.guard is not None:
+                    logger.info(
+                        f'guard_timer guard state cleared qq_id={qq_id} uname={bs.uname!r} '
+                        f'uid={bs.uid!r} last_reward_ts={bs.guard.last_reward_ts}'
+                    )
                 bs.guard = None
 
-            if bs.guard is not None and bs.guard.should_grant_reward():
+            should_grant_reward = bs.guard is not None and bs.guard.should_grant_reward()
+            logger.debug(
+                f'guard_timer reward check qq_id={qq_id} uname={bs.uname!r} uid={bs.uid!r} '
+                f'has_guard={bs.guard is not None} should_grant_reward={should_grant_reward} '
+                f'last_reward_ts={bs.guard.last_reward_ts if bs.guard is not None else None}'
+            )
+
+            if should_grant_reward:
                 user = User(qq_id)
+                logger.info(
+                    f'guard_timer reward granting qq_id={qq_id} uname={bs.uname!r} '
+                    f'uid={bs.uid!r} last_reward_ts={bs.guard.last_reward_ts}'
+                )
                 async with self.override(user):
-                    await self.voucher.adjust(
-                        cnt=Decimal('20'),
-                        extra=VoucherRecordExtraLiveGuard()
-                    )
+                    try:
+                        await self.voucher.adjust(
+                            cnt=Decimal('20'),
+                            extra=VoucherRecordExtraLiveGuard()
+                        )
+                    except Exception:
+                        logger.exception(f'guard_timer reward adjust failed qq_id={qq_id} uname={bs.uname!r} uid={bs.uid!r}')
+                        raise
                 ats.append(At(target=qq_id))
+                before_mark_ts = bs.guard.last_reward_ts
                 bs.guard.mark_granted()
+                logger.info(
+                    f'guard_timer reward granted qq_id={qq_id} uname={bs.uname!r} '
+                    f'uid={bs.uid!r} last_reward_ts={before_mark_ts}->{bs.guard.last_reward_ts}'
+                )
+
+        logger.info(f'guard_timer summary matched_bound_guards={matched_bound_guard_count} rewards={len(ats)}')
 
         if len(ats) > 0:
             self.backup_man.set_dirty()
@@ -1624,6 +1681,7 @@ class Live(Plugin, AchvCustomizer):
                     *ats,
                     f' 舰长大人, 本月的20根猫条奉上'
                 ])
+                logger.info(f'guard_timer reward notice sent group_id={group_id} rewards={len(ats)}')
 
     @top_instr('测试地鼠')
     async def test_whac_a_mole_cmd(self, member: GroupMember, info: UserBindInfo, man: WhacAMoleMan, source: Source):
