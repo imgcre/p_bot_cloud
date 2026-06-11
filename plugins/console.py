@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 import aiohttp
 import aiosqlite
 import qrcode
-from mirai import At, GroupMessage, MessageChain
+from mirai import At, GroupMessage, Image, MessageChain
 from plugin import Inject, InstrAttr, Plugin, autorun, route, top_instr
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
@@ -155,6 +155,19 @@ class Console(Plugin):
         out = BytesIO()
         image.save(out, format='PNG')
         return 'data:image/png;base64,' + base64.b64encode(out.getvalue()).decode('ascii')
+
+    def _make_small_qr_base64(self, text: str):
+        qr = qrcode.QRCode(
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            border=1,
+            box_size=3,
+        )
+        qr.add_data(text)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color='black', back_color='white').convert('RGB')
+        out = BytesIO()
+        image.save(out, format='PNG')
+        return base64.b64encode(out.getvalue()).decode('ascii')
 
     async def _fetchone(self, db, query: str, params: tuple):
         cursor = await db.execute(query, params)
@@ -506,6 +519,13 @@ class Console(Plugin):
             return
         await self._bind(code=code, qq_id=event.sender.id)
         return [At(target=event.sender.id), ' 控制台绑定成功']
+
+    @top_instr('控制台', InstrAttr.NO_ALERT_CALLER)
+    async def console_cmd(self, event: GroupMessage):
+        if event.sender.group.id not in set(self.known_groups):
+            return
+        url = self._frontend_url('/console')
+        return [Image(base64=self._make_small_qr_base64(url))]
 
     @autorun
     async def startup(self):
