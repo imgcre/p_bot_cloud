@@ -354,12 +354,14 @@ class Console(Plugin):
         member = await self._get_primary_member(qq_id)
         if member is None:
             raise RuntimeError('绑定QQ不在已知群内')
-        async with self.override(member):
-            violation = self.admin.gls_violation.get_data(member.group.id, qq_id)
-            morality = 0 if violation is None else -violation.count
-            voucher_cnt: Decimal = await self.voucher.get_count()
-            is_checked_in: bool = await self.check_in.is_checked_in_today()
-            achv_count = len(await self.achv.get_obtained())
+        event = GroupMessage(sender=member, messageChain=MessageChain([]))
+        with self.engine.of(event) as ctx, ctx:
+            async with self.override(member, User(qq_id)):
+                violation = self.admin.gls_violation.get_data(member.group.id, qq_id)
+                morality = 0 if violation is None else -violation.count
+                voucher_cnt: Decimal = await self.voucher.get_count()
+                is_checked_in: bool = await self.check_in.is_checked_in_today()
+                achv_count = len(await self.achv.get_obtained())
         return {
             'qq_id': qq_id,
             'member_name': member.member_name,
