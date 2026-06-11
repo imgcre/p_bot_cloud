@@ -1612,6 +1612,8 @@ class Live(Plugin, AchvCustomizer):
         ats = []
 
         for qq_id, bs in bound_users:
+            if bs.uid is None:
+                logger.warning(f'guard_timer bound user uid is empty qq_id={qq_id} uname={bs.uname!r}')
             uname_is_guard = bs.uid is not None and bs.uid in uids
 
             if uname_is_guard and bs.guard is None:
