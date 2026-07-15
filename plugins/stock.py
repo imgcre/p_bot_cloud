@@ -310,6 +310,9 @@ class Stock(Plugin, AchvCustomizer):
             return [f'无法获取股票"{q}"的数据']
         
         total_price = voucher_round_half_up(data[info.code].current_price * cnt)
+        if total_price <= 0:
+            return [f'买入的股票价值必须大于0']
+
         await self.voucher.check_satisfied(cnt=total_price)
 
         man.chat_state = ChatStateBuyConfirming(code=info.code, cnt=cnt, price=data[info.code].current_price)
@@ -322,6 +325,9 @@ class Stock(Plugin, AchvCustomizer):
             try:
                 if 'y' in aka.lower():
                     total_price = man.chat_state.price * man.chat_state.cnt
+                    if voucher_round_half_up(total_price) <= 0:
+                        return ['买入的股票价值必须大于0']
+
                     await self.voucher.adjust(cnt=-total_price, extra=VoucherRecordExtraStock(
                         code=man.chat_state.code,
                         cnt=man.chat_state.cnt,
