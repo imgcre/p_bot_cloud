@@ -20,7 +20,6 @@ from utilities import AchvRarity, AchvOpts, GroupLocalStorage, Source, SourceOp,
 if TYPE_CHECKING:
     from plugins.achv import Achv
     from plugins.events import Events
-    from plugins.gpt import Gpt
     from plugins.admin import Admin
     from plugins.throttle import Throttle
     from plugins.voucher import Voucher
@@ -41,7 +40,6 @@ class AiExt(Plugin):
 
     achv: Inject['Achv']
     events: Inject['Events']
-    gpt: Inject['Gpt']
     admin: Inject['Admin']
     throttle: Inject['Throttle']
     voucher: Inject['Voucher']
@@ -71,9 +69,7 @@ class AiExt(Plugin):
 
     @delegate()
     async def chat(self, event: GroupMessage, op: SourceOp, *, msg: list):
-        res = await self.gpt.response_with_ai(msg=msg)
-        if res is not None:
-            await self.bot.send(event, res)
+        await self.bot.send(event, msg)
 
     @throttle_config(name='AI', achv_speedup=True, effective_speedup=True, enable_min_duration=True)
     async def check_avaliable(self, *, recall: bool=False):
